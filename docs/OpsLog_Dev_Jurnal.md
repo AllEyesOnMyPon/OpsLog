@@ -344,3 +344,126 @@ Python importuje pakiety z podkreślnikami -(`ingest_gateway`). Stary katalog z 
 
 - Repo: posprzątane (`ingest_gateway` jako jedyny katalog usługi), zmiany wypchnięte na main.
 
+➡️**Cel**: Różnorodne emitery + rozszerzenia gateway
+
+Pokryć **typowe style** logów spotykane w projektach:
+
+- **Ustrukturyzowany JSON** `emit_json.py` (aplikacje/serwisy) ✅,
+
+- **Tylko msg** `emit_minimal.py` (skrypt, log biblioteki) ✅,
+
+- **Linie tekstowe** `emit_syslog.py` (syslog) ❌,
+
+- **CSV** `emit_csv.py` (eksporty/ETL) ❌,
+
+- **„Szum”** `emit_noise.py` (chaotyczne i niejednorodne rekordy spotykane w integracjach) ❌.
+
+Dzięki temu gateway musi umieć **rozpoznać format, wyciągnąć kluczowe pola i znormalizować** je do wspólnego schematu `ts/level/msg`, raportując jednocześnie braki (`missing_ts`, `missing_level`).
+
+**Zmiany w gateway (przegląd)**
+
+- Dodano obsługę formatów wejściowych:
+
+    - `application/json` — obiekt lub lista obiektów,
+
+    - `text/plain` — wielolinijkowe logi w stylu syslog (parser linii),
+
+    - `text/csv` — CSV z nagłówkiem (np. `ts,level,msg`).
+
+- Utrzymano normalizację do `ts` / `level` / `msg` + liczniki braków.
+
+- Ulepszono logowanie (logger zamiast `print`).
+
+- Wersjonowanie w `/healthz`:
+
+    - `v5-text-support` (po dodaniu `text/plain`),
+
+    - `v6-csv-support` (po dodaniu `text/csv`).
+
+### Emitery (dlaczego te typy + jak testowałem)
+
+1. **`emitter_json` — „server-style” JSON**
+
+**Dlaczego**: To najczęstszy format z aplikacji (API, mikroserwisy).
+
+**Plik**: `emitters\emitter_json\emit_json.py`
+
+**Test**: Robiony wcześniej w dzienniku⬆️
+
+2. **`emitter_minimal` — tylko msg**
+
+**Dlaczego**: Minimalny przypadek z reala (np. prosty skrypt lub log z biblioteki), testuje uzupełnianie braków.
+
+**Plik**: `emitters\emitter_minimal\emit_minimal.py`
+
+**Test**: Robiony wcześniej w dzienniku⬆️
+
+3. **`emitter_syslog` — linie tekstowe (legacy/syslog-like)**
+
+**Dlaczego**: Wiele starszych systemów wypisuje logi jako linie tekstowe (`syslog`). To wymusza parser linii po stronie gateway.
+
+**Plik**: `emitters\emitter_syslog\emit_syslog.py`
+
+Wymagane w gateway: wsparcie `text/plain` + regex parser.
+
+**Test**:
+```powershell
+.\.venv\Scripts\python.exe .\emitters\emitter_syslog\emit_syslog.py -n 15 --partial-ratio 0.4
+```
+**Oczekiwane**: `200 OK`, sensowne liczniki braków (część linii celowo „uboga”).
+
+4) **`emitter_csv` — CSV (`ts`,`level`,`msg`)**
+
+**Dlaczego**: CSV bywa formatem wymiany (eksporty, ETL). Łatwy do manualnego generowania, ale wymaga parsera.
+
+**Plik**: `emitters\emitter_csv\emit_csv.py`
+
+**Wymagane w gateway**: wsparcie `text/csv` + `csv.DictReader`.
+
+**Test**:
+```powershell
+.\.venv\Scripts\python.exe .\emitters\emitter_csv\emit_csv.py -n 12 --partial-ratio 0.4
+```
+**Oczekiwane**: `200 OK`, liczniki zależne od pustych kolumn.
+
+5) **`emitter_noise` — chaos/edge cases**
+
+**Dlaczego**: Symulacja „prawdziwego życia”: aliasy pól (`message/msg/log`), dziwne typy (`bool/int` zamiast `str`), zagnieżdżenia, braki.
+
+**Plik**: `emitters\emitter_noise\emit_noise.py`
+
+**Test**: 
+```powershell
+.\.venv\Scripts\python.exe .\emitters\emitter_noise\emit_noise.py --chaos 0.5 -n 20
+```
+**Oczekiwane**: `200 OK`, zwykle wyższe `missing_ts`/`missing_level`; gateway nadal zwraca spójny rezultat.
+
+**Jak testowałem (wzorce)**
+
+- **Zawsze 2 okna:**
+
+    - **A: serwer** (`uvicorn ... --reload`) → logi gateway (`[ingest] accepted=... missing_ts=...`),
+
+    - **B: emiter** → `status: 200` i `body: {...}`.
+
+- **PowerShell**: testy JSON robiłem `Invoke-RestMethod (irm)`, bo unika problemów z cudzysłowami; dla `text/plain` i `text/csv` ustawiałem odpowiedni `Content-Type`.
+
+- `/healthz`: kontrola wersji gateway po każdym patchu (np. `v5-text-support`, `v6-csv-support`).
+
+**✅ Stan na teraz:**
+
+- **Gateway**: `/healthz`, `/v1/logs` z obsługą `application/json`, `text/plain`, `text/csv`; normalizacja `ts/level/msg` + liczniki braków; logger.
+
+- **Emitery**:
+
+    - `emitter_json` (server-style),
+
+    - `emitter_minimal` (only `msg`),
+
+    - `emitter_syslog` (linie tekstowe),
+
+    - `emitter_csv` (CSV z nagłówkiem),
+
+    - `emitter_noise` (chaotyczne rekordy).
+
+- **Repo**: aktualne, posprzątane, wszystkie testy przeszły lokalnie.
