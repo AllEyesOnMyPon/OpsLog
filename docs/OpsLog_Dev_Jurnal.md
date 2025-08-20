@@ -235,3 +235,112 @@ testów z pliku (``--data-binary "@file.json"``)
     - w PowerShell → irm (proste i natywne)
 
     - w cross-platform → `curl --data-binary` z plikiem/STDIN
+
+## Day 1
+
+➡️**Cel**: Gateway: normalizacja + liczniki + poprawa logowania
+
+**Ścieżka robocza**:
+`C:\Users\kleme\Documents\Github\dev_playground\logops`
+
+**Zmiany w kodzie**:
+
+`services\ingest_gateway\gateway.py` — endpoint `/v1/logs` czyta surowe body (`Request.json()`),
+
+normalizacja pól do: `ts / level / msg`,
+
+liczniki: `missing_ts` i `missing_level`,
+
+logger zamiast `print()`.
+
+**Start serwera (okno A)**:
+```powershell
+cd C:\Users\kleme\Documents\Github\dev_playground\logops
+.\.venv\Scripts\python.exe -m uvicorn services.ingest_gateway.gateway:app --reload --reload-dir .\services\ingest_gateway --port 8080
+```
+**Testy (okno B)**:
+```powershell
+cd C:\Users\kleme\Documents\Github\dev_playground\logops
+
+# health
+irm http://127.0.0.1:8080/healthz
+
+# batch minimalny (PS-native JSON)
+$batch = @(@{ msg = "a" }, @{ msg = "b" }) | ConvertTo-Json -Compress
+irm -Method Post -Uri http://127.0.0.1:8080/v1/logs -ContentType 'application/json' -Body $batch
+```
+**Oczekiwane**:
+
+- Odpowiedź API (okno B): `{"accepted":2,"ts":"...","missing_ts":2,"missing_level":2}`
+
+- Log serwera (okno A): `INFO gateway: [ingest] accepted=2 missing_ts=2 missing_level=2`
+
+**Notatka**:
+W PowerShell używamy `Invoke-RestMethod (irm)` — stabilnie przekazuje JSON; `curl.exe` łatwo „psuje” cudzysłowy.
+
+➡️**Cel**:Emiter „server-style” (`emit_json`)
+
+**Plik**: `emitters\emitter_json\emit_json.py`
+
+**Uruchomienie (z katalogu projektu):**
+```powershell
+cd C:\Users\kleme\Documents\Github\dev_playground\logops
+.\.venv\Scripts\python.exe .\emitters\emitter_json\emit_json.py -n 10 --partial-ratio 0.3
+```
+**Oczekiwane (w oknie emitera):**
+```powershell
+status: 200
+body: {"accepted":10,"ts":"...","missing_ts":X,"missing_level":Y}
+```
+**Dlaczego tak:**
+Ten emiter ma generować „serwerowy” JSON z polami typu `timestamp/level/message/....` Część rekordów z brakami (`--partial-ratio`) testuje normalizację i liczniki.
+
+➡️**Cel**: Emiter „minimal” (`emit_minimal.py` *:tylko msg*)
+
+**Plik**: `emitters\emitter_minimal\emit_minimal.py`
+
+**Uruchomienie (z katalogu projektu):**
+```powershell
+cd C:\Users\kleme\Documents\Github\dev_playground\logops
+.\.venv\Scripts\python.exe .\emitters\emitter_minimal\emit_minimal.py -n 10
+.\.venv\Scripts\python.exe .\emitters\emitter_minimal\emit_minimal.py -n 25
+```
+**Oczekiwane (emiter)**:
+```powershell
+status: 200
+body: {"accepted":25,"ts":"...","missing_ts":25,"missing_level":25}
+```
+
+**Oczekiwane (log serwera)**:
+```powershell
+INFO gateway: [ingest] accepted=25 missing_ts=25 missing_level=25
+```
+
+**Uwagi:**
+Ten emiter świadomie nie wysyła `ts` ani `level`, żeby zobaczyć, że gateway uzupełnia `ts` i mapuje `level` domyślnie.
+
+➡️**Cel**: Porządki: usunięcie starego folderu i wypchnięcie zmian
+
+**Usunięcie starego katalogu (myślnik → podkreślnik):**
+```powershell
+cd C:\Users\kleme\Documents\Github\dev_playground\logops
+Remove-Item -Recurse -Force .\services\ingest-gateway
+```
+**Commit + push:**
+```powershell
+git status
+git add .
+git commit -m "cleanup: remove old ingest-gateway, update ingest_gateway, add emitter_json, add emitter_minimal"
+git push origin main
+```
+**Dlaczego tak:**
+Python importuje pakiety z podkreślnikami -(`ingest_gateway`). Stary katalog z myślnikiem potrafił mylić reloader.
+
+**✅ Stan na koniec**
+
+- Gateway: `/healthz`, `/v1/logs` (normalizacja + liczniki + logger).
+
+- Emitery: `emitter_json` (server-style), `emitter_minimal` (only msg).
+
+- Repo: posprzątane (`ingest_gateway` jako jedyny katalog usługi), zmiany wypchnięte na main.
+
