@@ -467,3 +467,486 @@ Wymagane w gateway: wsparcie `text/plain` + regex parser.
     - `emitter_noise` (chaotyczne rekordy).
 
 - **Repo**: aktualne, posprzątane, wszystkie testy przeszły lokalnie.
+
+### **📌 Wdrożenie szyfrowania danych wrażliwych (PII) – `wersja v7-pii-encryption`**
+
+1. **Cel**
+
+Dodanie maskowania oraz szyfrowania danych wrażliwych (PII), takich jak adresy e-mail i adresy IP, w systemie LogOps.
+Maskowanie służy do logów/analityki, natomiast szyfrowanie zapewnia bezpieczne przechowywanie surowych danych.
+
+2. **Implementacja**
+
+Dodano obsługę konfiguracji w `.env`:
+
+```ini
+LOGOPS_SECRET_KEY=...         # klucz Fernet
+LOGOPS_ENCRYPT_PII=true       # włączenie szyfrowania
+LOGOPS_ENCRYPT_FIELDS=user_email,client_ip
+LOGOPS_DEBUG_SAMPLE=true
+LOGOPS_DEBUG_SAMPLE_SIZE=3
+```
+- Zaimplementowano:
+
+    - **Maskowanie** emaili (`u***@example.com`) i IP (`83.11.x.x`).
+
+    - **Szyfrowanie Fernet** dla pól wskazanych w `LOGOPS_ENCRYPT_FIELDS` oraz całej wiadomości (`msg`).
+
+    - Dodanie zaszyfrowanych wersji pól z sufiksem `_enc` (np. `user_email_enc`).
+
+- Rozszerzono normalizację rekordów tak, aby zawsze zwracała:
+
+    - `msg` – zamaskowany,
+
+    - `msg_enc` – zaszyfrowany,
+
+    - `user_email` / `client_ip` – zamaskowane,
+
+    - `user_email_enc` / `client_ip_enc` – zaszyfrowane.
+
+3. **Napotkany problem: `.env` z BOM**
+
+Podczas testów API pojawiał się komunikat:
+
+```powershell
+PII encryption enabled but no LOGOPS_SECRET_KEY set; disabling encryption.
+```
+Mimo że `.env` zawierał prawidłowy wpis `LOGOPS_SECRET_KEY=...`.
+
+Po diagnostyce okazało się, że plik `.env` został zapisany z **UTF-8 BOM**:
+
+4. **Diagnostyka**
+
+Główny katalog `LogOps`:
+```powershell
+Get-Content .\.env -Encoding Byte -TotalCount 16
+```
+➡️ Pokazuje pierwsze bajty pliku (tu 16 sztuk), wyświetla liczby dziesiętne, np. `239 187 191 76 79 71 ...`.
+
+```powershell
+Get-Content .\.env -Encoding Byte -TotalCount 16
+```
+➡️ Pokazuje linie „jak leci” (żeby wykluczyć literówki/spacje)
+
+**Jak rozróżnić najczęstsze UTF-y po bajtach (BOM)**
+
+| Kodowanie         | Sygnatura na początku pliku (BOM) | Bajty dziesiętne   | Jak to rozpoznać w praktyce |
+|-------------------|-----------------------------------|--------------------|-----------------------------|
+| **UTF-8 bez BOM** | brak                              | np. `76 79 71`     | Najlepsze dla `.env`. Brak dodatkowych bajtów z przodu. |
+| **UTF-8 z BOM**   | `EF BB BF`                        | `239 187 191`      | `python-dotenv` może nie widzieć pierwszego klucza (BOM dokleja się do nazwy). |
+| **UTF-16 LE**     | `FF FE`                           | `255 254`          | Każda litera ma „0” obok: np. `76 0 79 0 71 0...`. |
+| **UTF-16 BE**     | `FE FF`                           | `254 255`          | Odwrotność LE: `0 76 0 79 0 71...`. |
+| **UTF-32 LE**     | `FF FE 00 00`                     | `255 254 0 0`      | Rzadka w takich plikach. |
+| **UTF-32 BE**     | `00 00 FE FF`                     | `0 0 254 255`      | Rzadka. |
+
+W tym przypadku było `239 187 191` → `UTF-8 z BOM`. Dlatego `python-dotenv` nie widział `LOGOPS_SECRET_KEY` (nazwę czytał jako `\ufeffLOGOPS_SECRET_KEY`).
+
+**Konwersja UTF-8 z BOM -> UTF-8 bez**
+
+- Przez .NET
+```powershell
+$body = Get-Content .\.env -Raw
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)  # false = bez BOM
+[System.IO.File]::WriteAllText(".\.env", $body, $utf8NoBom)
+```
+W tym przypadku plik byl zablokowany więc `WriteAllText` pod nazwa `.env.novbom`, `Remove` `.env` i `Rename` `.envnobom` na `.env`
+```powershell
+[System.IO.File]::WriteAllText(".\.env.nobom", $body, $utf8NoBom)
+Remove-Item .\.env
+Rename-Item .\.env.nobom .env
+```
+- Testy po konwersji:
+
+🔎 Sprawdzam czy BOM zniknął:
+
+```powershell
+Get-Content .\.env -Encoding Byte -TotalCount 3   # powinno NIE być 239 187 191
+```
+🔎 Sprawdzam przez Gateway:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn services.ingest_gateway.gateway:app --reload --port 8080
+irm http://127.0.0.1:8080/healthz
+# oczekuj: pii_encryption : True
+```
+- **Dlaczego to miało znaczenie dla `.env`**
+
+    - BOM (np. `EF BB BF`) „przykleja się” do **pierwszego klucza** w pliku.
+
+    - Biblioteka `python-dotenv` widzi wtedy zmienną o nazwie `\ufeffLOGOPS_SECRET_KEY` zamiast `LOGOPS_SECRET_KEY`.
+
+    - Efekt: kod myśli, że **sekret nie istnieje** → szyfrowanie wyłączone.
+
+**ℹ️Ciekawostka**
+
+Po `load_dotenv(...)` można dodać krótki log:
+```python
+import os
+print("DEBUG env:", os.getenv("LOGOPS_SECRET_KEY"), os.getenv("LOGOPS_ENCRYPT_PII"))
+```
+Jeśli `LOGOPS_SECRET_KEY` jest `None`, a wiesz, że jest w pliku, to pierwsze co sprawdzasz — **BOM**.
+
+5. **Testy końcowe**:
+
+**Health check**
+```powershell
+irm http://127.0.0.1:8080/healthz
+```
+✅ Wynik:
+```powershell
+status version           pii_encryption
+------ -------           --------------
+ok     v7-pii-encryption           True
+```
+
+**Test danych wejściowych**
+```powershell
+$batch = @(
+  @{ message = "login ok user=user1@example.com from 83.11.22.33"; level = "info"; user_email="user1@example.com"; client_ip="83.11.22.33" },
+  @{ msg = "fatal error for user2@example.com from 10.1.2.3" }
+) | ConvertTo-Json -Compress
+
+$res = irm -Method Post -Uri http://127.0.0.1:8080/v1/logs -ContentType 'application/json' -Body $batch
+$res
+```
+✅ Wynik:
+
+- `msg` zamaskowany (`u***@example.com`, `83.11.x.x`).
+
+- `msg_enc`, `user_email_enc`, `client_ip_enc` – zaszyfrowane wartości.
+
+- `user_email`, `client_ip` – zamaskowane do analityki.
+
+- Brak błędów, `accepted=2`.
+
+
+**6. Podsumowanie**
+
+
+- **Problem**: `.env` z BOM uniemożliwiał odczyt LOGOPS_SECRET_KEY.
+
+- **Rozwiązanie**: zapis pliku `.env` w czystym UTF-8 bez BOM.
+
+- **Efekt**: szyfrowanie PII aktywne, testy potwierdziły maskowanie + szyfrowanie.
+
+- **Dalsze kroki**:
+
+    - Rotacja klucza `LOGOPS_SECRET_KEY` wg polityki bezpieczeństwa.
+
+    - Wyłączenie `LOGOPS_DEBUG_SAMPLE` w produkcji.
+
+    - Opcjonalny endpoint `/debug/decrypt` do lokalnego testu odszyfrowania.
+
+## Day 2
+
+### Housekeeping (retencja/archiwizacja)
+
+**Cel**: Dodać lekki moduł housekeeping, który automatycznie sprząta dzienne pliki NDJSON z katalogu `data/ingest` zgodnie z retencją. Opcjonalnie archiwizuje stare pliki do ZIP.
+
+**1. Skrypt narzędziowy**
+
+Dodano `tools/housekeeping.py`:
+
+- czyta konfigurację z `.env` (`LOGOPS_RETENTION_DAYS`, `LOGOPS_ARCHIVE_MODE`, `LOGOPS_SINK_DIR`),
+
+- dla plików `YYYYMMDD.ndjson` porównuje datę z retencją,
+
+- tryb `delete`: usuwa pliki starsze niż N dni,
+
+- tryb `zip`: pakuje plik do `data/archive/YYYYMMDD`.zip, potem usuwa źródło,
+
+- eksportuje `run_once()` – „mostek” do wywołania z gatewaya.
+
+**2. Mostek w gateway (autorun przez lifespan)**
+
+W `services/ingest_gateway/gateway.py`:
+
+- uruchamianie housekeeping **raz przy starcie** (`LOGOPS_HOUSEKEEP_AUTORUN=true`),
+
+- (opcjonalnie) pętla **okresowa** co N sekund `(LOGOPS_HOUSEKEEP_INTERVAL_SEC>0`),
+
+- logi w konsoli, np.:
+
+    - `[housekeep] run_once at startup done`
+
+    - `[housekeep] deleted 20250818.ndjson`
+
+    - [`housekeep] archived 20250818.ndjson` -> `20250818.zip`
+
+**3. Konfiguracja `.env` (fragment)**:
+```ini
+# File sink
+LOGOPS_SINK_FILE=true
+LOGOPS_SINK_DIR=./data/ingest
+
+# Housekeeping (lifecycle)
+LOGOPS_RETENTION_DAYS=2
+LOGOPS_ARCHIVE_MODE=delete   # delete | zip
+
+# Autorun (gateway lifespan)
+LOGOPS_HOUSEKEEP_AUTORUN=true
+LOGOPS_HOUSEKEEP_INTERVAL_SEC=0   # 0 = tylko na starcie; np. 3600 = co godzinę
+```
+**Jak to działa w praktyce**
+
+1. **Zapis dobowy**: gateway zapisuje znormalizowane logi do `data/ingest/YYYYMMDD.ndjson`.
+
+2. **Sprzątanie**: przy starcie gatewaya (i ewentualnie cyklicznie) uruchamia się housekeeping:
+
+    - identyfikuje pliki „przeterminowane” względem `LOGOPS_RETENTION_DAYS`,
+
+    - **usuwa** (delete) lub **archiwizuje** (zip),
+
+    - loguje akcje w konsoli.
+
+## Day 3
+
+### Obserwowalność w środowisku Docker 
+
+**Cel:** Zbudowanie podstawowego stacku monitoringowo-logowego w oparciu o cztery komponenty:
+
+- Promtail – agent zbierający logi NDJSON z katalogu projektu, parsujący je i wysyłający do Loki,
+
+- Loki – magazyn logów zoptymalizowany pod query w Grafanie,
+
+- Prometheus – zbiera metryki z logops gatewaya (liczniki accepted/missing itp.) oraz obsługuje reguły alertowe,
+
+- Grafana – dashboardy dla logów i metryk.
+
+- Zmiana struktury katalogów. Wcześniej wszystkie configi były w `infra/docker/`. Wprowadzilem bardziej uporządkowaną strukturę:
+
+```markdown
+infra/
+└── docker/
+    ├── docker-compose.yml
+    ├── prometheus/
+    │   ├── prometheus.yml
+    │   └── alert_rules.yml
+    ├── loki/
+    │   └── loki-config.yml
+    └── promtail/
+        └── promtail-config.yml
+```
+Dzięki temu każdy serwis ma swój własny katalog, a `docker-compose.yml` jedynie montuje pliki konfiguracyjne.
+
+**Kluczowe implementacje:**
+
+**1. Promtail**
+
+- ustawienie `positions.filename: /var/lib/promtail/positions.yaml` i podmontowaliśmy wolumen `promtail-data` → offsety są utrwalane między restartami, więc nie ma re-ingestu starych linii,
+
+- dodanie `start_position`: end → agent zaczyna czytać od końca pliku,
+
+- `pipeline_stages` parsuje NDJSON, mapuje `ts`, `level`, `msg`, `emitter`, a resztę wysyła jako payload.
+
+**2. Loki**
+
+- przeniesiony config do `infra/docker/loki/`,
+
+- problemy z błędnym polem `path` w configu → poprawione, serwis startuje czysto,
+
+- dane trzymane w wolumenie `loki-data`.
+
+**3. Prometheus**
+
+skonfigurowany do scrapowania `logops_gateway` i `self-metrics` innych serwisów,
+
+- dołączony plik `alert_rules.yml` (pusty),
+
+umożliwione **reloady** configu via `irm -Method Post http://localhost:9090/-/reload`.
+
+**4. Grafana**
+
+- postawione podstawowe dashboardy:
+
+  - **Overview (Prometheus)** – statystyki accepted/missing, inflight,
+
+  - **Trends (Loki)** – count_over_time wg levela,
+
+  - **Emitters** – rozbicie po polu emitter,
+
+  - **Raw logs / Live tail** – podgląd bieżących logów.
+
+### Obserwowalność - problemy i fixy
+
+- **Promtail nie startował – pomyłka: `promtail-config.yaml` vs `.yml`.**
+
+  Rozwiązanie: usunięcie duplikatu, spójne `.yml`.
+
+- **Loki wyrzucał błędy `failed to load chunk … no such file` przy starych danych.**
+  
+  Rozwiązanie: czyszczenie wolumenu i ponowny start.
+
+- **Brak świeżych logów w Grafanie – różnica czasu (PL vs UTC).**
+  
+  Rozwiązanie: timestampy w NDJSON są w UTC, Grafana też → problem leżał w offsetach, naprawione po prawidłowym ustawieniu `positions` i s`tart_position`.
+
+- **„No volume available” w panelach – Promtail nie miał wolumenu na offsety.**
+
+  Dodaliśmy wolumen `promtail-data:/var/lib/promtail`.
+
+**Efekt**
+- End-to-end pipeline działa: logi NDJSON → Promtail → Loki → Grafana.
+
+- Prometheus zbiera metryki i rejestruje alerty.
+
+- Dashboardy w Grafanie pokazują już dane live (Overview + Trends + Raw logs).
+
+### Alerty Prometheus `alert_rules.yml`
+
+**Cel:** Automatyczne wykrywanie anomalii w strumieniu logów.
+
+**1. Struktura plików**
+
+- Alerty umieszczone w:
+```bash
+infra/docker/prometheus/alert_rules.yml
+```
+- Dodanie sekcji do `prometheus.yml`:
+```bash
+rule_files:
+  - /etc/prometheus/alert_rules.yml
+```
+- Reload konfiguracji:
+```powershell
+irm -Method Post http://localhost:9090/-/reload
+```
+**2. Zainicjowane reguły:**
+
+**LogOpsGatewayDown**
+---
+
+  - Expr: `up{job="logops_gateway"} == 0`
+
+  - For: **1m**
+
+  - Severity: **critical**
+
+👉 Wykrywa, że gateway w ogóle nie odpowiada na scrape.
+
+⚡ Parametr `for: 1m` chroni przed chwilowymi timeoutami.
+
+
+**LogOpsNoIngest5m**
+---
+
+- Expr: `increase(logops_accepted_total[5m]) <= 0`
+
+- For: **2m**
+
+- Severity: **warning**
+
+👉 Alarmuje, jeśli w oknie **5 minut** nie ma ani jednego przyjętego logu.
+
+⚡ Praktyczne do wykrycia całkowitej przerwy w **ingest**.
+
+**LogOpsLowIngest**
+---
+
+- Expr: `rate(logops_accepted_total[5m]) < 0.2`
+
+- For: **5m**
+
+- Severity: **info**
+
+👉 Wskazuje, że pipeline „tli się” – średnio **<0.2 loga/s**.
+
+⚡ Informacyjny – nie jest to awaria, ale sygnał podejrzanie niskiego ruchu.
+
+**LogOpsHighIngestBurst**
+---
+
+- Expr: `rate(logops_accepted_total[1m]) > 20`
+
+- For: **1m**
+
+- Severity: **warning**
+
+👉 Wykrywa nagłe wzrosty ruchu (**≥20 logów/s**).
+
+⚡ Może sygnalizować sztorm błędów, pętlę w aplikacji, albo **flood/DDoS**.
+
+**LogOpsHighMissingTS**
+---
+
+- Expr: przy **≥100 logach w 5m**, odsetek brakujących **TS > 20%**
+
+- For: **2m**
+
+- Severity: **warning**
+
+👉 Wykrywa, że sporo logów nie ma pola `ts`.
+
+⚡ Dolny próg (**20%**) daje wczesne ostrzeżenie, ale wymaga też min. **100 logów** (żeby uniknąć fałszywych alarmów przy małej próbce).
+
+**LogOpsVeryHighMissingTS**
+--
+- Expr: przy **≥200** logach w 5m, odsetek braków TS > **50%**
+
+- For: **2m**
+
+- Severity: **critical**
+
+👉 Eskalacja alertu z punktu `LogOpsHighMissingTS`.
+
+⚡ Wysoki próg (**50%**) i większa liczba logów (**200**) → **alarm krytyczny**, oznacza masowe problemy z pipeline.
+
+**LogOpsHighMissingLevel**
+---
+
+- Expr: analogiczne do (`LogOpsHighMissingTS`), ale dla pola level.
+
+- For: **2m**
+
+- Severity: **warning**
+
+👉 Ostrzega, gdy **≥20%** logów nie ma poziomu (**INFO/ERROR/WARN/DEBUG**).
+
+**LogOpsVeryHighMissingLevel**
+---
+
+Expr: analogiczne do `LogOpsVeryHighMissingTS`, ale dla pola `level`.
+
+For: **2m**
+
+Severity: **critical**
+
+👉 Krytyczny wariant dla braków pola `level`.
+
+**LogOpsInflightStuckHigh**
+---
+
+Expr: `logops_inflight > 5`
+
+For: **2m**
+
+Severity: **warning**
+
+👉 Monitoruje **gauge „in-flight”** (np. liczba logów w kolejce).
+
+⚡ Jeśli **>5** przez **≥2** minuty → backpressure, przetwarzanie się zapycha.
+
+**LogOpsMetricsAbsent**
+---
+
+Expr: `absent(up{job="logops_gateway"})`
+
+For: **2m**
+
+Severity: **critical**
+
+👉 **Fallback** – jeśli Prometheus całkowicie przestaje widzieć metryki z gatewaya.
+
+⚡ Rozszerza alert nr 1 (nie tylko „0”, ale brak danych w ogóle).
+
+### **Podsumowanie**
+
+- Mamy pokrycie **dostępności** (GatewayDown, MetricsAbsent).
+
+- Mamy pokrycie **wolumenu ruchu** (NoIngest, LowIngest, HighIngestBurst).
+
+- Mamy kontrolę **jakości logów** (MissingTS, MissingLevel – wariant warning i critical).
+
+- Mamy kontrolę **kolejki** (Inflight).
+
+To daje nam **pełne minimum observability**: wykryjemy brak ruchu, anomalie ruchu, błędy w danych i problemy systemowe.

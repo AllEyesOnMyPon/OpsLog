@@ -1,0 +1,63 @@
+services:
+  loki:
+    image: grafana/loki:2.9.6
+    container_name: logops-loki
+    command: -config.file=/etc/loki/config.yml
+    ports:
+      - "3100:3100"
+    volumes:
+      # loki config przeniesiony do podkatalogu loki/
+      - ./loki/loki-config.yml:/etc/loki/config.yml:ro
+      - loki-data:/loki
+    networks: [obs]
+
+  promtail:
+    image: grafana/promtail:2.9.6
+    container_name: logops-promtail
+    command: -config.file=/etc/promtail/config.yml
+    volumes:
+      # promtail config w podkatalogu promtail/
+      - ./promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      # mapowanie katalogu z NDJSON
+      - ../../data/ingest:/var/logops/data/ingest:ro
+      # PERSIST: plik pozycji promtaila
+      - ./promtail/positions:/var/lib/promtail
+    depends_on: [loki]
+    networks: [obs]
+
+  prometheus:
+    image: prom/prometheus:v2.54.0
+    container_name: logops-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - prometheus-data:/prometheus
+    networks: [obs]
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: logops-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on: [loki, prometheus]
+    networks: [obs]
+
+volumes:
+  loki-data:
+  prometheus-data:
+  grafana-data:
+  promtail-data:   # <— NOWE: wolumen na plik pozycji
+
+networks:
+  obs:
