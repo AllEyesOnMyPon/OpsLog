@@ -814,7 +814,7 @@ irm -Method Post http://localhost:9090/-/reload
 **2. Zainicjowane reguły:**
 
 **LogOpsGatewayDown**
----
+
 
   - Expr: `up{job="logops_gateway"} == 0`
 
@@ -828,7 +828,7 @@ irm -Method Post http://localhost:9090/-/reload
 
 
 **LogOpsNoIngest5m**
----
+
 
 - Expr: `increase(logops_accepted_total[5m]) <= 0`
 
@@ -841,7 +841,7 @@ irm -Method Post http://localhost:9090/-/reload
 ⚡ Praktyczne do wykrycia całkowitej przerwy w **ingest**.
 
 **LogOpsLowIngest**
----
+
 
 - Expr: `rate(logops_accepted_total[5m]) < 0.2`
 
@@ -854,7 +854,7 @@ irm -Method Post http://localhost:9090/-/reload
 ⚡ Informacyjny – nie jest to awaria, ale sygnał podejrzanie niskiego ruchu.
 
 **LogOpsHighIngestBurst**
----
+
 
 - Expr: `rate(logops_accepted_total[1m]) > 20`
 
@@ -867,7 +867,7 @@ irm -Method Post http://localhost:9090/-/reload
 ⚡ Może sygnalizować sztorm błędów, pętlę w aplikacji, albo **flood/DDoS**.
 
 **LogOpsHighMissingTS**
----
+
 
 - Expr: przy **≥100 logach w 5m**, odsetek brakujących **TS > 20%**
 
@@ -880,7 +880,7 @@ irm -Method Post http://localhost:9090/-/reload
 ⚡ Dolny próg (**20%**) daje wczesne ostrzeżenie, ale wymaga też min. **100 logów** (żeby uniknąć fałszywych alarmów przy małej próbce).
 
 **LogOpsVeryHighMissingTS**
---
+
 - Expr: przy **≥200** logach w 5m, odsetek braków TS > **50%**
 
 - For: **2m**
@@ -892,7 +892,7 @@ irm -Method Post http://localhost:9090/-/reload
 ⚡ Wysoki próg (**50%**) i większa liczba logów (**200**) → **alarm krytyczny**, oznacza masowe problemy z pipeline.
 
 **LogOpsHighMissingLevel**
----
+
 
 - Expr: analogiczne do (`LogOpsHighMissingTS`), ale dla pola level.
 
@@ -903,7 +903,7 @@ irm -Method Post http://localhost:9090/-/reload
 👉 Ostrzega, gdy **≥20%** logów nie ma poziomu (**INFO/ERROR/WARN/DEBUG**).
 
 **LogOpsVeryHighMissingLevel**
----
+
 
 Expr: analogiczne do `LogOpsVeryHighMissingTS`, ale dla pola `level`.
 
@@ -914,7 +914,7 @@ Severity: **critical**
 👉 Krytyczny wariant dla braków pola `level`.
 
 **LogOpsInflightStuckHigh**
----
+
 
 Expr: `logops_inflight > 5`
 
@@ -927,7 +927,7 @@ Severity: **warning**
 ⚡ Jeśli **>5** przez **≥2** minuty → backpressure, przetwarzanie się zapycha.
 
 **LogOpsMetricsAbsent**
----
+
 
 Expr: `absent(up{job="logops_gateway"})`
 
@@ -950,3 +950,74 @@ Severity: **critical**
 - Mamy kontrolę **kolejki** (Inflight).
 
 To daje nam **pełne minimum observability**: wykryjemy brak ruchu, anomalie ruchu, błędy w danych i problemy systemowe.
+
+### Rozdzielenie requirements na produkcyjne i developerskie
+
+**Tworzenie dwóch zestawów plików wymagań:**
+
+- `services/ingest_gateway/requirements.txt` – pakiety potrzebne do uruchomienia gateway’a (produkcja).
+
+  Zawiera m.in.:
+
+  - `fastapi`, `uvicorn` → serwer API,
+
+  - `python-dotenv` → konfiguracja środowiska,
+
+  - `cryptography` → obsługa szyfrowania,
+
+  - `prometheus-client` → eksport metryk,
+
+  - `requests` → komunikacja HTTP.
+
+
+- `requirements-dev.txt` (root repo) – pakiety przydatne do developmentu i testów.
+
+  Zawiera m.in.:
+
+  - `black`, `ruff` → formatowanie i linting,
+
+  - `mypy` → typowanie,
+
+  - `pytest`, `pytest-asyncio` → testy,
+
+  - `httpx` → testy API.
+
+**Cel:** 
+- Oddzielić to, co **niezbędne do działania** usługi, od narzędzi developerskich.
+
+- Dzięki temu kontenery produkcyjne będą lżejsze i prostsze w utrzymaniu, a jednocześnie mamy pełne wsparcie narzędzi w środowisku developerskim.
+
+**Efekt**:
+
+- **Czystszy podział obowiązków:** gateway nie ciągnie za sobą zbędnych paczek.
+
+- **Lepsza kontrola zależności:** łatwo sprawdzić, co jest „core”, a co jest tylko „dev tooling”.
+
+Przygotowane do automatyzacji buildów (np. Dockerfile może używać tylko `requirements.txt` z katalogu usługi).
+
+## Day 4-5 
+
+2025/08/23-24 – Dokumentacja i Structurizr
+
+Uporządkowałem strukturę dokumentacji w projekcie **LogOps**.  
+Zasada jest prosta: główny `README.md` w root to **mapa projektu** i szybki start, a wszystkie szczegóły są rozbite na osobne pliki w `docs/`.  
+
+- `overview.md` → przegląd projektu, co jest in scope / out of scope  
+- `quickstart.md` → jak uruchomić środowisko krok po kroku  
+- `infra.md`, `observability.md` → szczegóły Dockera, Prometheus, Grafana, Loki, Promtail  
+- `services/` → opis Gatewaya i emiterów (każdy emiter ma własny README)  
+- `tools/housekeeping.md` → osobny opis skryptu czyszczącego archiwalne NDJSON  
+- `architecture.md` → diagramy C4 (C1, C2, C3)  
+
+Dzięki temu unikam ściany tekstu – każdy moduł ma swoje miejsce i można łatwo znaleźć potrzebne info.
+
+Dodatkowo uruchomiłem **Structurizr Lite** w kontenerze Dockera.  
+Za jego pomocą zdefiniowałem model w DSL (`workspace.dsl`) i wyeksportowałem diagramy C1–C3 do PNG.  
+Teraz w `architecture.md` są podlinkowane gotowe obrazki (`c1.png`, `c2.png`, `c3.png`), więc całość jest czytelna również w repo na GitHubie bez uruchamiania Structurizr.
+
+Wnioski: **docs muszą żyć równolegle z projektem nie jako uzupełnienie bo łatwo sie zgubić w miarę skalowania.**
+
+
+
+
+

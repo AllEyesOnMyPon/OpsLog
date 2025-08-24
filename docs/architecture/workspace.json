@@ -1,0 +1,524 @@
+{
+  "configuration" : { },
+  "description" : "Dev logs playground",
+  "documentation" : { },
+  "id" : 1,
+  "lastModifiedAgent" : "structurizr-ui",
+  "lastModifiedDate" : "2025-08-24T14:05:18Z",
+  "model" : {
+    "people" : [ {
+      "description" : "Uruchamia emitery, sprawdza wyniki w Grafanie.",
+      "id" : "1",
+      "location" : "Unspecified",
+      "name" : "Developer",
+      "properties" : {
+        "structurizr.dsl.identifier" : "user"
+      },
+      "relationships" : [ {
+        "description" : "Uruchamia (CLI)",
+        "destinationId" : "4",
+        "id" : "23",
+        "sourceId" : "1",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Uruchamia (CLI)",
+        "destinationId" : "3",
+        "id" : "24",
+        "linkedRelationshipId" : "23",
+        "sourceId" : "1"
+      } ],
+      "tags" : "Element,Person"
+    }, {
+      "description" : "Przegląda logi i metryki.",
+      "id" : "2",
+      "location" : "Unspecified",
+      "name" : "Grafana User",
+      "properties" : {
+        "structurizr.dsl.identifier" : "viewer"
+      },
+      "relationships" : [ {
+        "description" : "Przegląda",
+        "destinationId" : "21",
+        "id" : "34",
+        "sourceId" : "2",
+        "tags" : "Relationship"
+      }, {
+        "description" : "Przegląda",
+        "destinationId" : "3",
+        "id" : "35",
+        "linkedRelationshipId" : "34",
+        "sourceId" : "2"
+      } ],
+      "tags" : "Element,Person"
+    } ],
+    "softwareSystems" : [ {
+      "containers" : [ {
+        "description" : "Symulatory: CSV/JSON/Minimal/Noise/Syslog",
+        "documentation" : { },
+        "id" : "4",
+        "name" : "Emitters",
+        "properties" : {
+          "structurizr.dsl.identifier" : "sys.emitters"
+        },
+        "relationships" : [ {
+          "description" : "POST /v1/logs (CSV/JSON/plain)",
+          "destinationId" : "5",
+          "id" : "25",
+          "sourceId" : "4",
+          "tags" : "Relationship"
+        } ],
+        "tags" : "Element,Container",
+        "technology" : "Python CLI"
+      }, {
+        "components" : [ {
+          "description" : "Endpoints: /v1/logs, /metrics, /healthz",
+          "documentation" : { },
+          "id" : "6",
+          "name" : "API",
+          "properties" : {
+            "structurizr.dsl.identifier" : "sys.gateway.api"
+          },
+          "relationships" : [ {
+            "description" : "Odbiera payload i przekazuje do parserów",
+            "destinationId" : "7",
+            "id" : "12",
+            "sourceId" : "6",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component",
+          "technology" : "FastAPI"
+        }, {
+          "description" : "JSON/CSV/plain (syslog regex)",
+          "documentation" : { },
+          "id" : "7",
+          "name" : "Parsers",
+          "properties" : {
+            "structurizr.dsl.identifier" : "sys.gateway.parsers"
+          },
+          "relationships" : [ {
+            "description" : "Parsuje dane i przekazuje do normalizatora",
+            "destinationId" : "8",
+            "id" : "13",
+            "sourceId" : "7",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "map level, mask e-mail/IP, enc fields",
+          "documentation" : { },
+          "id" : "8",
+          "name" : "Normalizer + PII",
+          "properties" : {
+            "structurizr.dsl.identifier" : "sys.gateway.normalizer"
+          },
+          "relationships" : [ {
+            "description" : "Zapisuje rekordy do NDJSON (opcjonalnie)",
+            "destinationId" : "9",
+            "id" : "14",
+            "sourceId" : "8",
+            "tags" : "Relationship"
+          }, {
+            "description" : "Aktualizuje liczniki/metryki Prometheus",
+            "destinationId" : "10",
+            "id" : "15",
+            "sourceId" : "8",
+            "tags" : "Relationship"
+          }, {
+            "description" : "Trigger housekeeping wg ENV (opcjonalnie)",
+            "destinationId" : "11",
+            "id" : "16",
+            "sourceId" : "8",
+            "tags" : "Relationship"
+          } ],
+          "tags" : "Element,Component"
+        }, {
+          "description" : "NDJSON writer",
+          "documentation" : { },
+          "id" : "9",
+          "name" : "File Sink",
+          "properties" : {
+            "structurizr.dsl.identifier" : "sys.gateway.sink"
+          },
+          "tags" : "Element,Component"
+        }, {
+          "description" : "Prometheus exposition",
+          "documentation" : { },
+          "id" : "10",
+          "name" : "Metrics Exporter",
+          "properties" : {
+            "structurizr.dsl.identifier" : "sys.gateway.metrics"
+          },
+          "tags" : "Element,Component"
+        }, {
+          "description" : "autorun/interval → tools.housekeeping.run_once()",
+          "documentation" : { },
+          "id" : "11",
+          "name" : "Housekeeping Trigger",
+          "properties" : {
+            "structurizr.dsl.identifier" : "sys.gateway.hktrigger"
+          },
+          "tags" : "Element,Component"
+        } ],
+        "description" : "Przyjmuje/normalizuje logi, PII mask/enc, /metrics",
+        "documentation" : { },
+        "id" : "5",
+        "name" : "Ingest Gateway",
+        "properties" : {
+          "structurizr.dsl.identifier" : "sys.gateway"
+        },
+        "relationships" : [ {
+          "description" : "Opcjonalny zapis NDJSON",
+          "destinationId" : "17",
+          "id" : "26",
+          "sourceId" : "5",
+          "tags" : "Relationship",
+          "technology" : "LOGOPS_SINK_FILE=true"
+        }, {
+          "description" : "run_once()/loop (ENV)",
+          "destinationId" : "22",
+          "id" : "37",
+          "sourceId" : "5",
+          "tags" : "Relationship",
+          "technology" : "autorun + interval (opcjonalnie)"
+        } ],
+        "tags" : "Element,Container",
+        "technology" : "FastAPI (Python) :8080"
+      }, {
+        "description" : "Pliki NDJSON (YYYYMMDD.ndjson)",
+        "documentation" : { },
+        "id" : "17",
+        "name" : "File Sink",
+        "properties" : {
+          "structurizr.dsl.identifier" : "sys.filesink"
+        },
+        "tags" : "Element,Container",
+        "technology" : "Filesystem: data/ingest"
+      }, {
+        "description" : "Czyta NDJSON, etykiety i push do Loki",
+        "documentation" : { },
+        "id" : "18",
+        "name" : "Promtail",
+        "properties" : {
+          "structurizr.dsl.identifier" : "sys.promtail"
+        },
+        "relationships" : [ {
+          "description" : "Scrape *.ndjson (bind-mount)",
+          "destinationId" : "17",
+          "id" : "27",
+          "sourceId" : "18",
+          "tags" : "Relationship",
+          "technology" : "read-only"
+        }, {
+          "description" : "Push logów",
+          "destinationId" : "19",
+          "id" : "28",
+          "sourceId" : "18",
+          "tags" : "Relationship"
+        } ],
+        "tags" : "Element,Container",
+        "technology" : "Grafana Promtail :9080"
+      }, {
+        "description" : "Składowanie i query logów",
+        "documentation" : { },
+        "id" : "19",
+        "name" : "Loki",
+        "properties" : {
+          "structurizr.dsl.identifier" : "sys.loki"
+        },
+        "tags" : "Element,Container",
+        "technology" : "Grafana Loki :3100"
+      }, {
+        "description" : "Scrape /metrics, alerty",
+        "documentation" : { },
+        "id" : "20",
+        "name" : "Prometheus",
+        "properties" : {
+          "structurizr.dsl.identifier" : "sys.prometheus"
+        },
+        "relationships" : [ {
+          "description" : "GET /metrics",
+          "destinationId" : "5",
+          "id" : "29",
+          "sourceId" : "20",
+          "tags" : "Relationship"
+        }, {
+          "description" : "Scrape status",
+          "destinationId" : "19",
+          "id" : "30",
+          "sourceId" : "20",
+          "tags" : "Relationship"
+        }, {
+          "description" : "Scrape :9080",
+          "destinationId" : "18",
+          "id" : "31",
+          "sourceId" : "20",
+          "tags" : "Relationship"
+        } ],
+        "tags" : "Element,Container",
+        "technology" : "Prometheus :9090"
+      }, {
+        "description" : "Dashboardy / Explore (Loki + Prometheus)",
+        "documentation" : { },
+        "id" : "21",
+        "name" : "Grafana",
+        "properties" : {
+          "structurizr.dsl.identifier" : "sys.grafana"
+        },
+        "relationships" : [ {
+          "description" : "Explore / Query",
+          "destinationId" : "19",
+          "id" : "32",
+          "sourceId" : "21",
+          "tags" : "Relationship"
+        }, {
+          "description" : "Dashboardy / Alerting",
+          "destinationId" : "20",
+          "id" : "33",
+          "sourceId" : "21",
+          "tags" : "Relationship"
+        } ],
+        "tags" : "Element,Container",
+        "technology" : "Grafana :3000"
+      }, {
+        "description" : "Cleanup/archiwizacja starych NDJSON",
+        "documentation" : { },
+        "id" : "22",
+        "name" : "Housekeeping",
+        "properties" : {
+          "structurizr.dsl.identifier" : "sys.hk"
+        },
+        "relationships" : [ {
+          "description" : "Usuwa/archiwizuje wg retention",
+          "destinationId" : "17",
+          "id" : "36",
+          "sourceId" : "22",
+          "tags" : "Relationship"
+        } ],
+        "tags" : "Element,Container",
+        "technology" : "Python script (tools/housekeeping.py)"
+      } ],
+      "description" : "Emitery → Gateway → Promtail/Loki → Grafana/Prometheus",
+      "documentation" : { },
+      "id" : "3",
+      "location" : "Unspecified",
+      "name" : "LogOps",
+      "properties" : {
+        "structurizr.dsl.identifier" : "sys"
+      },
+      "tags" : "Element,Software System"
+    } ]
+  },
+  "name" : "LogOps",
+  "properties" : {
+    "structurizr.dsl" : "77u/d29ya3NwYWNlICJMb2dPcHMiICJEZXYgbG9ncyBwbGF5Z3JvdW5kIiB7CgogICFpZGVudGlmaWVycyBoaWVyYXJjaGljYWwKCiAgbW9kZWwgewoKICAgIHVzZXIgICA9IHBlcnNvbiAiRGV2ZWxvcGVyIiAiVXJ1Y2hhbWlhIGVtaXRlcnksIHNwcmF3ZHphIHd5bmlraSB3IEdyYWZhbmllLiIKICAgIHZpZXdlciA9IHBlcnNvbiAiR3JhZmFuYSBVc2VyIiAiUHJ6ZWdsxIVkYSBsb2dpIGkgbWV0cnlraS4iCgogICAgc3lzID0gc29mdHdhcmVTeXN0ZW0gIkxvZ09wcyIgIkVtaXRlcnkg4oaSIEdhdGV3YXkg4oaSIFByb210YWlsL0xva2kg4oaSIEdyYWZhbmEvUHJvbWV0aGV1cyIgewoKICAgICAgZW1pdHRlcnMgICAgPSBjb250YWluZXIgIkVtaXR0ZXJzIiAiU3ltdWxhdG9yeTogQ1NWL0pTT04vTWluaW1hbC9Ob2lzZS9TeXNsb2ciICJQeXRob24gQ0xJIgoKICAgICAgZ2F0ZXdheSA9IGNvbnRhaW5lciAiSW5nZXN0IEdhdGV3YXkiICJQcnp5am11amUvbm9ybWFsaXp1amUgbG9naSwgUElJIG1hc2svZW5jLCAvbWV0cmljcyIgIkZhc3RBUEkgKFB5dGhvbikgOjgwODAiIHsKICAgICAgICBhcGkgICAgICAgID0gY29tcG9uZW50ICJBUEkiICJFbmRwb2ludHM6IC92MS9sb2dzLCAvbWV0cmljcywgL2hlYWx0aHoiICJGYXN0QVBJIgogICAgICAgIHBhcnNlcnMgICAgPSBjb21wb25lbnQgIlBhcnNlcnMiICJKU09OL0NTVi9wbGFpbiAoc3lzbG9nIHJlZ2V4KSIKICAgICAgICBub3JtYWxpemVyID0gY29tcG9uZW50ICJOb3JtYWxpemVyICsgUElJIiAibWFwIGxldmVsLCBtYXNrIGUtbWFpbC9JUCwgZW5jIGZpZWxkcyIKICAgICAgICBzaW5rICAgICAgID0gY29tcG9uZW50ICJGaWxlIFNpbmsiICJOREpTT04gd3JpdGVyIgogICAgICAgIG1ldHJpY3MgICAgPSBjb21wb25lbnQgIk1ldHJpY3MgRXhwb3J0ZXIiICJQcm9tZXRoZXVzIGV4cG9zaXRpb24iCiAgICAgICAgaGtUcmlnZ2VyICA9IGNvbXBvbmVudCAiSG91c2VrZWVwaW5nIFRyaWdnZXIiICJhdXRvcnVuL2ludGVydmFsIOKGkiB0b29scy5ob3VzZWtlZXBpbmcucnVuX29uY2UoKSIKCiAgICAgICAgIyBSZWxhY2plIEMzIHdld27EhXRyeiBnYXRld2F5YQogICAgICAgIGFwaSAgICAgICAgLT4gcGFyc2VycyAgICAiT2RiaWVyYSBwYXlsb2FkIGkgcHJ6ZWthenVqZSBkbyBwYXJzZXLDs3ciCiAgICAgICAgcGFyc2VycyAgICAtPiBub3JtYWxpemVyICJQYXJzdWplIGRhbmUgaSBwcnpla2F6dWplIGRvIG5vcm1hbGl6YXRvcmEiCiAgICAgICAgbm9ybWFsaXplciAtPiBzaW5rICAgICAgICJaYXBpc3VqZSByZWtvcmR5IGRvIE5ESlNPTiAob3Bjam9uYWxuaWUpIgogICAgICAgIG5vcm1hbGl6ZXIgLT4gbWV0cmljcyAgICAiQWt0dWFsaXp1amUgbGljem5pa2kvbWV0cnlraSBQcm9tZXRoZXVzIgogICAgICAgIG5vcm1hbGl6ZXIgLT4gaGtUcmlnZ2VyICAiVHJpZ2dlciBob3VzZWtlZXBpbmcgd2cgRU5WIChvcGNqb25hbG5pZSkiCiAgICAgIH0KCiAgICAgIGZpbGVTaW5rICAgID0gY29udGFpbmVyICJGaWxlIFNpbmsiICJQbGlraSBOREpTT04gKFlZWVlNTURELm5kanNvbikiICJGaWxlc3lzdGVtOiBkYXRhL2luZ2VzdCIKICAgICAgcHJvbXRhaWwgICAgPSBjb250YWluZXIgIlByb210YWlsIiAiQ3p5dGEgTkRKU09OLCBldHlraWV0eSBpIHB1c2ggZG8gTG9raSIgIkdyYWZhbmEgUHJvbXRhaWwgOjkwODAiCiAgICAgIGxva2kgICAgICAgID0gY29udGFpbmVyICJMb2tpIiAiU2vFgmFkb3dhbmllIGkgcXVlcnkgbG9nw7N3IiAiR3JhZmFuYSBMb2tpIDozMTAwIgogICAgICBwcm9tZXRoZXVzICA9IGNvbnRhaW5lciAiUHJvbWV0aGV1cyIgIlNjcmFwZSAvbWV0cmljcywgYWxlcnR5IiAiUHJvbWV0aGV1cyA6OTA5MCIKICAgICAgZ3JhZmFuYSAgICAgPSBjb250YWluZXIgIkdyYWZhbmEiICJEYXNoYm9hcmR5IC8gRXhwbG9yZSAoTG9raSArIFByb21ldGhldXMpIiAiR3JhZmFuYSA6MzAwMCIKICAgICAgaGsgICAgICAgICAgPSBjb250YWluZXIgIkhvdXNla2VlcGluZyIgIkNsZWFudXAvYXJjaGl3aXphY2phIHN0YXJ5Y2ggTkRKU09OIiAiUHl0aG9uIHNjcmlwdCAodG9vbHMvaG91c2VrZWVwaW5nLnB5KSIKICAgIH0KCiAgICAjIFJlbGFjamUgQzHigJNDMgogICAgdXNlciAgICAgICAgICAgICAgIC0+IHN5cy5lbWl0dGVycyAgICAgIlVydWNoYW1pYSAoQ0xJKSIKICAgIHN5cy5lbWl0dGVycyAgICAgICAtPiBzeXMuZ2F0ZXdheSAgICAgICJQT1NUIC92MS9sb2dzIChDU1YvSlNPTi9wbGFpbikiCiAgICBzeXMuZ2F0ZXdheSAgICAgICAgLT4gc3lzLmZpbGVTaW5rICAgICAiT3Bjam9uYWxueSB6YXBpcyBOREpTT04iICJMT0dPUFNfU0lOS19GSUxFPXRydWUiCiAgICBzeXMucHJvbXRhaWwgICAgICAgLT4gc3lzLmZpbGVTaW5rICAgICAiU2NyYXBlICoubmRqc29uIChiaW5kLW1vdW50KSIgInJlYWQtb25seSIKICAgIHN5cy5wcm9tdGFpbCAgICAgICAtPiBzeXMubG9raSAgICAgICAgICJQdXNoIGxvZ8OzdyIKICAgIHN5cy5wcm9tZXRoZXVzICAgICAtPiBzeXMuZ2F0ZXdheSAgICAgICJHRVQgL21ldHJpY3MiCiAgICBzeXMucHJvbWV0aGV1cyAgICAgLT4gc3lzLmxva2kgICAgICAgICAiU2NyYXBlIHN0YXR1cyIKICAgIHN5cy5wcm9tZXRoZXVzICAgICAtPiBzeXMucHJvbXRhaWwgICAgICJTY3JhcGUgOjkwODAiCiAgICBzeXMuZ3JhZmFuYSAgICAgICAgLT4gc3lzLmxva2kgICAgICAgICAiRXhwbG9yZSAvIFF1ZXJ5IgogICAgc3lzLmdyYWZhbmEgICAgICAgIC0+IHN5cy5wcm9tZXRoZXVzICAgIkRhc2hib2FyZHkgLyBBbGVydGluZyIKICAgIHZpZXdlciAgICAgICAgICAgICAtPiBzeXMuZ3JhZmFuYSAgICAgICJQcnplZ2zEhWRhIgoKICAgIHN5cy5oayAgICAgICAgICAgICAtPiBzeXMuZmlsZVNpbmsgICAgICJVc3V3YS9hcmNoaXdpenVqZSB3ZyByZXRlbnRpb24iCiAgICBzeXMuZ2F0ZXdheSAgICAgICAgLT4gc3lzLmhrICAgICAgICAgICAicnVuX29uY2UoKS9sb29wIChFTlYpIiAiYXV0b3J1biArIGludGVydmFsIChvcGNqb25hbG5pZSkiCiAgfQoKICB2aWV3cyB7CgogICAgc3lzdGVtQ29udGV4dCBzeXMgewogICAgICBpbmNsdWRlICoKICAgICAgYXV0b2xheW91dCBscgogICAgICB0aXRsZSAiQzE6IExvZ09wcyDigJMgU3lzdGVtIENvbnRleHQiCiAgICB9CgogICAgY29udGFpbmVyIHN5cyB7CiAgICAgIGluY2x1ZGUgKgogICAgICBhdXRvbGF5b3V0IGxyCiAgICAgIHRpdGxlICJDMjogTG9nT3BzIOKAkyBDb250YWluZXJzIgogICAgfQoKICAgIGNvbXBvbmVudCBzeXMuZ2F0ZXdheSB7CiAgICAgIGluY2x1ZGUgKgogICAgICBhdXRvbGF5b3V0IGxyCiAgICAgIHRpdGxlICJDMzogSW5nZXN0IEdhdGV3YXkg4oCTIENvbXBvbmVudHMiCiAgICB9CiAgfQp9"
+  },
+  "views" : {
+    "componentViews" : [ {
+      "automaticLayout" : {
+        "applied" : true,
+        "edgeSeparation" : 0,
+        "implementation" : "Graphviz",
+        "nodeSeparation" : 300,
+        "rankDirection" : "LeftRight",
+        "rankSeparation" : 300,
+        "vertices" : false
+      },
+      "containerId" : "5",
+      "dimensions" : {
+        "height" : 2011,
+        "width" : 3140
+      },
+      "elements" : [ {
+        "id" : "6",
+        "x" : 219,
+        "y" : 785
+      }, {
+        "id" : "7",
+        "x" : 969,
+        "y" : 785
+      }, {
+        "id" : "8",
+        "x" : 1719,
+        "y" : 785
+      }, {
+        "id" : "9",
+        "x" : 2469,
+        "y" : 185
+      }, {
+        "id" : "10",
+        "x" : 2469,
+        "y" : 1385
+      }, {
+        "id" : "11",
+        "x" : 2469,
+        "y" : 785
+      } ],
+      "externalContainerBoundariesVisible" : false,
+      "generatedKey" : true,
+      "key" : "Component-001",
+      "order" : 3,
+      "relationships" : [ {
+        "id" : "12"
+      }, {
+        "id" : "13"
+      }, {
+        "id" : "14"
+      }, {
+        "id" : "15"
+      }, {
+        "id" : "16"
+      } ],
+      "title" : "C3: Ingest Gateway – Components"
+    } ],
+    "configuration" : {
+      "branding" : { },
+      "lastSavedView" : "Container-001",
+      "metadataSymbols" : "SquareBrackets",
+      "styles" : { },
+      "terminology" : { }
+    },
+    "containerViews" : [ {
+      "automaticLayout" : {
+        "applied" : true,
+        "edgeSeparation" : 0,
+        "implementation" : "Graphviz",
+        "nodeSeparation" : 300,
+        "rankDirection" : "LeftRight",
+        "rankSeparation" : 300,
+        "vertices" : false
+      },
+      "dimensions" : {
+        "height" : 2516,
+        "width" : 4620
+      },
+      "elements" : [ {
+        "id" : "1",
+        "x" : 950,
+        "y" : 165
+      }, {
+        "id" : "2",
+        "x" : 200,
+        "y" : 1582
+      }, {
+        "id" : "4",
+        "x" : 1700,
+        "y" : 674
+      }, {
+        "id" : "5",
+        "x" : 2450,
+        "y" : 674
+      }, {
+        "id" : "17",
+        "x" : 3950,
+        "y" : 1128
+      }, {
+        "id" : "18",
+        "x" : 2450,
+        "y" : 1274
+      }, {
+        "id" : "19",
+        "x" : 3200,
+        "y" : 1890
+      }, {
+        "id" : "20",
+        "x" : 1700,
+        "y" : 1428
+      }, {
+        "id" : "21",
+        "x" : 950,
+        "y" : 1582
+      }, {
+        "id" : "22",
+        "x" : 3200,
+        "y" : 674
+      } ],
+      "externalSoftwareSystemBoundariesVisible" : false,
+      "generatedKey" : true,
+      "key" : "Container-001",
+      "order" : 2,
+      "relationships" : [ {
+        "id" : "23"
+      }, {
+        "id" : "25"
+      }, {
+        "id" : "26",
+        "vertices" : [ {
+          "x" : 3200,
+          "y" : 1124
+        } ]
+      }, {
+        "id" : "27",
+        "vertices" : [ {
+          "x" : 3650,
+          "y" : 1357
+        } ]
+      }, {
+        "id" : "28"
+      }, {
+        "id" : "29"
+      }, {
+        "id" : "30"
+      }, {
+        "id" : "31"
+      }, {
+        "id" : "32",
+        "vertices" : [ {
+          "x" : 1700,
+          "y" : 1878
+        }, {
+          "x" : 2450,
+          "y" : 1953
+        } ]
+      }, {
+        "id" : "33"
+      }, {
+        "id" : "34"
+      }, {
+        "id" : "36"
+      }, {
+        "id" : "37"
+      } ],
+      "softwareSystemId" : "3",
+      "title" : "C2: LogOps – Containers"
+    } ],
+    "systemContextViews" : [ {
+      "automaticLayout" : {
+        "applied" : true,
+        "edgeSeparation" : 0,
+        "implementation" : "Graphviz",
+        "nodeSeparation" : 300,
+        "rankDirection" : "LeftRight",
+        "rankSeparation" : 300,
+        "vertices" : false
+      },
+      "dimensions" : {
+        "height" : 1300,
+        "width" : 1600
+      },
+      "elements" : [ {
+        "id" : "1",
+        "x" : 200,
+        "y" : 165
+      }, {
+        "id" : "2",
+        "x" : 200,
+        "y" : 765
+      }, {
+        "id" : "3",
+        "x" : 950,
+        "y" : 465
+      } ],
+      "enterpriseBoundaryVisible" : true,
+      "generatedKey" : true,
+      "key" : "SystemContext-001",
+      "order" : 1,
+      "relationships" : [ {
+        "id" : "24"
+      }, {
+        "id" : "35"
+      } ],
+      "softwareSystemId" : "3",
+      "title" : "C1: LogOps – System Context"
+    } ]
+  }
+}
