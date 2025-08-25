@@ -1,8 +1,8 @@
 # ====== Config ======
-PY        ?= python
+PY ?= $(shell command -v python || command -v python3 || echo $(PWD)/.venv/bin/python)
 UVICORN   ?= uvicorn
 
-COMPOSE_FILE := infra/docker/docker-compose.observability.py
+COMPOSE_FILE := infra/docker/docker-compose.observability.yml
 DC          := docker compose -f $(COMPOSE_FILE)
 
 GATEWAY_APP := services.ingest_gateway.gateway:app
@@ -80,3 +80,32 @@ env: ## Stwórz .env z .env.example jeśli nie istnieje
 .PHONY: help up down ps logs prom-reload gateway \
         emit-csv emit-json emit-minimal emit-noise emit-syslog \
         hk-once structurizr structurizr-export loki-query env
+
+# ====== Scenarios ======
+scenario-run: ## Uruchom scenariusz: make scenario-run SCEN=scenarios/default.yaml
+	$(PY) tools/run_scenario.py --scenario $(SCEN)
+
+scenario-default: ## Szybki scenariusz domyślny
+	$(PY) tools/run_scenario.py --scenario scenarios/default.yaml
+
+scenario-burst-high-error: ## Scenariusz burst_high_error
+	$(PY) tools/run_scenario.py --scenario scenarios/burst_high_error.yaml
+
+scenario-quiet: ## Scenariusz quiet (niski EPS)
+	$(PY) tools/run_scenario.py --scenario scenarios/quiet.yaml
+
+scenario-spike: ## Scenariusz spike (nagły wzrost EPS)
+	$(PY) tools/run_scenario.py --scenario scenarios/spike.yaml
+
+scenario-quiet-then-spike: ## Scenariusz: najpierw cisza, potem spike
+	$(MAKE) scenario-quiet
+	$(MAKE) scenario-spike
+
+scenario-high-errors: ## Scenariusz z dużą ilością ERROR
+	$(PY) tools/run_scenario.py --scenario scenarios/high_errors.yaml
+
+scenario-list: ## Wypisz dostępne scenariusze
+	@ls -1 scenarios | sed 's/^/  - /'
+
+scenario-%: ## Uruchom dowolny scenariusz: make scenario-NAZWA (bez .yaml)
+	$(PY) tools/run_scenario.py --scenario scenarios/$*.yaml

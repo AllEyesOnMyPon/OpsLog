@@ -1,0 +1,27 @@
+name: spike
+duration_sec: 10
+tick_sec: 1.0
+emitters:
+  - name: emitter_json
+    eps: 120
+    args:
+      partial_ratio: 0.05
+      seed: 2001
+  - name: emitter_syslog
+    eps: 80
+    args:
+      partial_ratio: 0.05
+      seed: 2002
+
+  - name: emitter_minimal
+    eps: 40
+
+  - name: emitter_noise
+    eps: 40
+    args:
+      chaos: 0.3
+
+  - name: emitter_syslog
+    eps: 40
+    args:
+      partial_ratio: 0.1

@@ -95,6 +95,8 @@ logops/
 - [Infrastruktura (Docker)](docs/infra.md)  
 - [Testy](docs/testing.md)  
 - [Roadmap](docs/roadmap.md)
+- [Pełna dokumentacja zmiennych środowiskowych](docs/env.md)
+- [Orkiestracja ruchu: run_scenario.py](docs/tools/run_scenario.md)
 
 ## Testy
 ```bash

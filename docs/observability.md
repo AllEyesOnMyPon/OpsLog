@@ -126,3 +126,70 @@ irm "http://localhost:3100/loki/api/v1/query?query={job='logops-ndjson',app='log
 ```
 **Housekeeping** (gateway) może usuwać/archiwizować starsze `*.ndjson` w `data/ingest/`.
 Jeśli włączony, starsze logi mogą zniknąć z widoku Promtail/Loki. Szczegóły: `docs/tools/housekeeping.md`.
+
+## Scenarios — generowanie ruchu testowego
+
+W katalogu `scenarios/` znajdują się predefiniowane profile ruchu, które można uruchamiać przez **Makefile**.  
+Służą do symulacji różnych warunków obciążenia i jakości logów.
+
+### Dostępne scenariusze
+
+| Scenariusz              | Czas trwania | Charakterystyka                                                                 |
+|--------------------------|--------------|---------------------------------------------------------------------------------|
+| `default.yaml`           | 20s          | Wszystkie emitery, umiarkowany i zróżnicowany ruch                              |
+| `quiet.yaml`             | 30s          | Niski EPS, stabilny ruch, użyteczne do sanity check                             |
+| `spike.yaml`             | 20s          | Początkowo mały ruch, następnie gwałtowny wzrost EPS                            |
+| `quiet-then-spike.yaml`  | 40s (2x20s)  | Kombinacja: najpierw `quiet`, potem `spike`                                     |
+| `high_errors.yaml`       | 20s          | Dużo braków pól i błędów (`partial_ratio=0.6`, `chaos=0.8`)                     |
+| `burst_high_error.yaml`  | 30s          | Krótkie, intensywne bursty z dużym poziomem błędów                              |
+
+### Uruchamianie
+
+- Lista scenariuszy:
+```bash
+  make scenario-list
+```
+- Uruchomienie konkretnego scenariusza:
+
+```bash
+make scenario-default
+make scenario-quiet
+make scenario-spike
+make scenario-high_errors
+make scenario-burst_high_error
+```
+- Uruchomienie dowolnego pliku z `scenarios/`:
+```bash
+make scenario-run SCEN=scenarios/my_custom.yaml
+```
+### Analiza w Loki/Grafana
+
+Po uruchomieniu scenariusza logi trafiają do Loki.
+Przykładowe zapytania w Grafana Explore:
+
+- Wszystkie logi z emitera JSON:
+
+```logql
+{job="logops-ndjson", app="logops", emitter="emitter_json"}
+```
+- Liczba błędów (level="ERROR") z emitera Syslog:
+```logql
+count_over_time({emitter="emitter_syslog", level="ERROR"}[5m])
+```
+### Analiza w Prometheus
+
+Prometheus zbiera metryki od Gateway.
+Przykładowe zapytania:
+
+- Liczba zaakceptowanych eventów:
+```promql
+rate(logops_accepted_total[1m])
+```
+- Liczba brakujących timestampów:
+```promql
+rate(logops_missing_ts_total[1m])
+```
+- Liczba błędów w polu `level`:
+```promql
+rate(logops_missing_level_total[1m])
+```

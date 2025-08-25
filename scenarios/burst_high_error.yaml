@@ -1,0 +1,13 @@
+name: burst_high_error
+duration_sec: 30
+tick_sec: 1.0
+emitters:
+  - name: emitter_json
+    eps: 30
+    args:
+      partial_ratio: 0.15
+  - name: emitter_noise
+    eps: 20
+    args:
+      chaos: 0.6
+      seed: 42

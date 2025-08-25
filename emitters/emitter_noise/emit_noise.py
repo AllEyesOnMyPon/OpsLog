@@ -3,14 +3,19 @@ import random
 import socket
 import time
 from typing import Any, Dict, List, Optional
-
+from collections import Counter
+import json
 import requests
+import os
 
 URL = "http://127.0.0.1:8080/v1/logs"
+
 HOST = socket.gethostname()
 
 LEVEL_WORDS = ["debug", "info", "warning", "warn", "error", "fatal", "trace"]
+
 MSG_WORDS = ["ok", "fail", "timeout", "retry", "db", "cache", "http", "queue", "auth", "io"]
+
 KEY_ALIASES = [
     ("message", "msg", "log", "text"),
     ("level", "lvl", "severity"),
@@ -18,6 +23,8 @@ KEY_ALIASES = [
 ]
 
 EXTRA_KEYS = ["userId", "user_email", "client_ip", "path", "method", "durationMs", "env", "service", "meta"]
+
+SCENARIO = os.environ.get("LOGOPS_SCENARIO")
 
 def maybe(prob: float) -> bool:
     return random.random() < prob
@@ -96,12 +103,25 @@ def main(n: int, chaos: float, seed: Optional[int]):
     if seed is not None:
         random.seed(seed)
 
-    batch: List[Dict[str, Any]] = [make_noise_record(i, chaos) for i in range(1, n + 1)]
+    batch: List[Dict[str, Any]] = []
+    level_counts = Counter()
 
-    # wysyłamy jako JSON array
-    r = requests.post(URL, json=batch, timeout=10)
+    for i in range(1, n + 1):
+        rec = make_noise_record(i, chaos)
+        lvl = (rec.get("level") or rec.get("lvl") or rec.get("severity"))
+        if isinstance(lvl, str):
+            level_counts[lvl.upper()] += 1
+        batch.append(rec)
+
+    headers = {"X-Emitter": "emitter_noise"}
+    scenario = os.environ.get("LOGOPS_SCENARIO")
+    if scenario:
+        headers["X-Scenario"] = scenario
+
+    r = requests.post(URL, json=batch, headers=headers, timeout=10)
     print("status:", r.status_code)
     print("body:", r.text)
+    print("SC_STAT " + json.dumps({"level_counts": dict(level_counts)}))
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Emit noisy/chaotic JSON records to test gateway normalization.")

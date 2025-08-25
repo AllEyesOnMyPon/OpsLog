@@ -20,26 +20,26 @@ Krótka, żywa roadmapa rozwoju LogOps. Cele są zgrupowane na krótkie / średn
 ## Short term (najbliższe tygodnie)
 
 **Emitery i scenariusze**
-- [ ] Dodać katalog `scenarios/` z profilami ruchu (`default.yaml`, `burst.yaml`, `quiet-then-spike.yaml`, `high-errors.yaml`)
-- [ ] (Opcjonalnie) dopisać do emiterów nagłówek `X-Emitter` zawsze (jeśli gdzieś brakuje), by `emitter=` był w Lokim przewidywalny
+- [x] Dodać katalog `scenarios/` z profilami ruchu (`default.yaml`, `burst.yaml`, `quiet-then-spike.yaml`, `high-errors.yaml`)
+- [x] (Opcjonalnie) dopisać do emiterów nagłówek `X-Emitter` zawsze (jeśli gdzieś brakuje), by `emitter=` był w Lokim przewidywalny
 
 **Orchestracja „CLI first”**
-- [ ] `tools/run_scenario.py`: CLI, które odpala emitery wg scenariusza (czas trwania, EPS, rozkład leveli)
-- [ ] Wypisywać krótkie statystyki na koniec (ile wysłano per emitter/level)
-- [ ] Dodać targety do `Makefile`: `scenario:run`, `emit:*` (opcjonalnie)
+- [x] `tools/run_scenario.py`: CLI, które odpala emitery wg scenariusza (czas trwania, EPS, rozkład leveli)
+- [x] Wypisywać krótkie statystyki na koniec (ile wysłano per emitter/level)
+- [x] Dodać targety do `Makefile`: `scenario:run`, `emit:*` (opcjonalnie)
 
 **Gateway**
-- [ ] Walidacja wejścia (proste `pydantic` modele; 400/422 dla złych danych)
-- [ ] Drobne metryki dodatkowe (np. `logops_parse_errors_total`)
+- [x] Walidacja wejścia (proste `pydantic` modele; 400/422 dla złych danych)
+- [x] Drobne metryki dodatkowe (np. `logops_parse_errors_total`)
 
 **Observability i alerty**
-- [ ] Dashboard Grafany: panele pod orchestrację/scenariusze (EPS, udział poziomów, missing ts/level)
-- [ ] Dopracować alerty progowe po testach scenariuszy (progi, `for`, opisy)
+- [x] Dashboard Grafany: panele pod orchestrację/scenariusze (EPS, udział poziomów, missing ts/level)
+- [x] Dopracować alerty progowe po testach scenariuszy (progi, `for`, opisy)
 
 **Dokumentacja**
-- [ ] Uzupełnić `docs/services/orchestrator.md` (jeśli ruszy CLI)
-- [ ] Dodać `.env.example` z flagami: `LOGOPS_SINK_FILE`, `LOGOPS_ENCRYPT_PII`, `LOGOPS_RETENTION_DAYS`, `LOGOPS_ARCHIVE_MODE`, `LOGOPS_HOUSEKEEP_*`
-- [ ] Uporządkować nazewnictwo README emiterów (docelowo `docs/emitters/emitter_xxx.md` lub `docs/emitters/emitter_xxx/README.md`)
+- [x] Uzupełnić `docs/services/orchestrator.md` (jeśli ruszy CLI)
+- [x] Dodać `.env.example` z flagami: `LOGOPS_SINK_FILE`, `LOGOPS_ENCRYPT_PII`, `LOGOPS_RETENTION_DAYS`, `LOGOPS_ARCHIVE_MODE`, `LOGOPS_HOUSEKEEP_*`
+- [x] Uporządkować nazewnictwo README emiterów (docelowo `docs/emitters/emitter_xxx.md` lub `docs/emitters/emitter_xxx/README.md`)
 
 ---
 

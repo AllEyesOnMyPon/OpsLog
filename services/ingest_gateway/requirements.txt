@@ -4,3 +4,9 @@ python-dotenv==1.1.1
 cryptography>=43,<46
 prometheus-client==0.20.0
 requests==2.32.5
+requests
+python-dotenv
+cryptography
+fastapi
+uvicorn
+prometheus-client

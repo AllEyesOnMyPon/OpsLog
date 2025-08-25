@@ -1,0 +1,26 @@
+name: default
+duration_sec: 20
+tick_sec: 1.0
+emitters:
+  - name: emitter_csv
+    eps: 5
+    args:
+      partial_ratio: 0.2
+
+  - name: emitter_json
+    eps: 5
+    args:
+      partial_ratio: 0.2
+
+  - name: emitter_minimal
+    eps: 5
+
+  - name: emitter_noise
+    eps: 5
+    args:
+      chaos: 0.3
+
+  - name: emitter_syslog
+    eps: 5
+    args:
+      partial_ratio: 0.1

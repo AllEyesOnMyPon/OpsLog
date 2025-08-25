@@ -1,0 +1,15 @@
+name: quiet
+duration_sec: 30
+tick_sec: 1.0
+emitters:
+  - name: emitter_json
+    eps: 2
+    args:
+      partial_ratio: 0.1
+      seed: 1001
+  - name: emitter_syslog
+    eps: 1
+    args:
+      partial_ratio: 0.1
+      seed: 1002
+  
