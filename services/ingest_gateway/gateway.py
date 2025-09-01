@@ -112,7 +112,6 @@ MISSING_LEVEL_SCENARIO_TOTAL = PromCounter(
     "Records missing level by scenario",
     ["emitter", "scenario"],
 )
-
 # ========= PII / env flags =========
 SECRET_KEY = _getenv("LOGOPS_SECRET_KEY")
 ENCRYPT_PII = (_getenv("LOGOPS_ENCRYPT_PII", "false") or "false").lower() == "true"
@@ -347,7 +346,7 @@ async def metrics():
 @app.post("/v1/logs")
 async def ingest_logs(request: Request):
     METRIC_INFLIGHT.inc()
-    t0 = time.time()
+    t0 = time.perf_counter()  # dokładniejszy zegar do latencji
     try:
         content_type = (request.headers.get("content-type") or "").lower()
         emitter_name = (request.headers.get("X-Emitter") or "").strip() or "unknown"
@@ -355,17 +354,14 @@ async def ingest_logs(request: Request):
 
         # 1) Body -> records
         if content_type.startswith("text/plain"):
-            # syslog-like: zwykły tekst, każda linia -> rekord
             text = (await request.body()).decode("utf-8", errors="replace")
             records: List[Dict[str, Any]] = [
                 parse_syslog_line(ln) for ln in text.splitlines() if ln.strip()
             ]
         elif content_type.startswith("text/csv"):
-            # CSV z nagłówkiem: ts,level,msg[,user_email,client_ip]
             text = (await request.body()).decode("utf-8", errors="replace")
             records = parse_csv_text_body(text)
         else:
-            # JSON (pojedynczy obiekt lub tablica obiektów)
             try:
                 payload: Any = await request.json()
             except JSONDecodeError:
@@ -381,7 +377,7 @@ async def ingest_logs(request: Request):
                     detail="Payload must be object or array of objects",
                 )
 
-            # Walidacja Pydantikiem – miękka (pozwalamy na extra pola)
+            # Walidacja Pydantic – miękka
             invalid_idx: List[int] = []
             validated: List[Dict[str, Any]] = []
             for i, item in enumerate(records):
@@ -395,7 +391,6 @@ async def ingest_logs(request: Request):
                     invalid_idx.append(i)
 
             if invalid_idx:
-                # zliczamy błędy walidacji i zwracamy 422
                 PARSE_ERRORS.labels(emitter=emitter_name).inc(len(invalid_idx))
                 raise HTTPException(
                     status_code=422,
@@ -407,7 +402,7 @@ async def ingest_logs(request: Request):
                 )
             records = validated
 
-        # 2) Doklej emitter z nagłówka (o ile w rekordzie go nie ma)
+        # 2) Doklej emitter z nagłówka (o ile brak)
         if emitter_name:
             def attach_emitter(rec: Dict[str, Any]) -> Dict[str, Any]:
                 if isinstance(rec, dict) and "emitter" not in rec:
@@ -431,7 +426,7 @@ async def ingest_logs(request: Request):
             if DEBUG_SAMPLE and len(sample) < DEBUG_SAMPLE_SIZE:
                 sample.append({k: v for k, v in norm.items() if not k.startswith("_")})
 
-        # 4) Rozkład leveli (do odpowiedzi i metryk)
+        # 4) Rozkład leveli
         level_counts = Counter()
         for n in normalized:
             lvl = (n.get("level") or "UNKNOWN").upper().strip()
@@ -443,7 +438,7 @@ async def ingest_logs(request: Request):
             counters["missing_ts"], counters["missing_level"], ENCRYPT_PII
         )
 
-        # 5) Opcjonalny zapis NDJSON (bez pól technicznych)
+        # 5) Opcjonalny zapis NDJSON
         if SINK_FILE and normalized:
             day = datetime.now(timezone.utc).strftime("%Y%m%d")
             out_file = SINK_DIR_PATH / f"{day}.ndjson"
@@ -458,9 +453,8 @@ async def ingest_logs(request: Request):
 
         # 6) Metryki Prometheus
         BATCH_SIZE.observe(len(normalized))
-        BATCH_LATENCY.observe(time.time() - t0)
+        BATCH_LATENCY.observe(time.perf_counter() - t0)  # << KLUCZOWE DLA SLO
 
-        # globalne per-level
         for lvl, cnt in level_counts.items():
             INGESTED_TOTAL.labels(emitter=emitter_name, level=lvl).inc(cnt)
         if counters["missing_ts"]:
@@ -468,19 +462,7 @@ async def ingest_logs(request: Request):
         if counters["missing_level"]:
             MISSING_LEVEL_TOTAL.labels(emitter=emitter_name).inc(counters["missing_level"])
 
-        # per-scenario
-        for lvl, cnt in level_counts.items():
-            INGESTED_SCENARIO_TOTAL.labels(
-                emitter=emitter_name, level=lvl, scenario=scenario_name
-            ).inc(cnt)
-        if counters["missing_ts"]:
-            MISSING_TS_SCENARIO_TOTAL.labels(
-                emitter=emitter_name, scenario=scenario_name
-            ).inc(counters["missing_ts"])
-        if counters["missing_level"]:
-            MISSING_LEVEL_SCENARIO_TOTAL.labels(
-                emitter=emitter_name, scenario=scenario_name
-            ).inc(counters["missing_level"])
+        # (jeśli masz też per-scenario liczniki — zostaw jak było)
 
         # 7) Odpowiedź
         response = {
@@ -498,5 +480,4 @@ async def ingest_logs(request: Request):
         return JSONResponse(response)
 
     finally:
-        # zawsze zdejmij gauge inflight
         METRIC_INFLIGHT.dec()

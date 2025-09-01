@@ -1,0 +1,27 @@
+name: burst-then-ramp
+duration_sec: 40
+tick_sec: 1.0
+
+emitters:
+  - name: emitter_json
+    # alternatywnie plugin:
+    # script: custom_emitters/my_special.py
+    eps: 20
+    args:
+      partial_ratio: 0.2
+      seed: 123
+    schedule:
+      start_after_sec: 0
+      ramp_up_sec: 5
+      stop_after_sec: 30
+      ramp_down_sec: 5
+      jitter_pct: 0.10
+
+  - name: emitter_minimal
+    eps: 5
+    schedule:
+      start_after_sec: 10
+      ramp_up_sec: 0
+      stop_after_sec: 35
+      ramp_down_sec: 3
+      jitter_pct: 0.0

@@ -1,17 +1,16 @@
 groups:
   - name: logops.alerts
-    interval: 15s   # jak często Prometheus ma ewaluować te reguły
-
+    interval: 15s
     rules:
       # 1) Gateway nie odpowiada / scrape przestał działać
       - alert: LogOpsGatewayDown
-        expr: up{job="logops_gateway"} == 0
+        expr: up{job="logops-gateway"} == 0
         for: 1m
         labels:
           severity: critical
         annotations:
           summary: "Gateway is down"
-          description: "Target up{job='logops_gateway'} == 0 przez ≥1m."
+          description: "Target up{job='logops-gateway'} == 0 przez ≥1m."
 
       # 2) Brak ingestu w ogóle (twarde zero)
       - alert: LogOpsNoIngest5m
@@ -23,8 +22,7 @@ groups:
           summary: "No logs ingested for 5 minutes"
           description: "Brak przyrostu logops_accepted_total w oknie 5m przez ≥2m."
 
-      # 3) Niski ingest – ruch 'tli się', ale jest podejrzanie mały
-      #    (średnio < 0.2 loga/s przez ≥5m)
+      # 3) Niski ingest
       - alert: LogOpsLowIngest
         expr: rate(logops_accepted_total[5m]) < 0.2
         for: 5m
@@ -34,8 +32,7 @@ groups:
           summary: "Low ingest rate"
           description: "Średnia szybkość ingestu < 0.2 loga/s przez ≥5m."
 
-      # 4) Nagły burst ingestu — możliwy sztorm zdarzeń / pętla / DDoS na wejściu
-      #    (średnio > 20 logów/s przez ≥1m)
+      # 4) Burst ingestu
       - alert: LogOpsHighIngestBurst
         expr: rate(logops_accepted_total[1m]) > 20
         for: 1m
@@ -45,9 +42,7 @@ groups:
           summary: "High ingest burst"
           description: "Szybkość ingestu > 20 logów/s przez ≥1m (sprawdź źródła)."
 
-      # 5) Duży udział brakujących timestampów (wariant WARNING)
-      #    Aktywuj dopiero, gdy w ostatnich 5m zebraliśmy min. 100 logów,
-      #    a odsetek braków TS > 20% przez ≥2m.
+      # 5) Missing TS (WARNING)
       - alert: LogOpsHighMissingTS
         expr: increase(logops_accepted_total[5m]) >= 100
           and ( increase(logops_missing_ts_total[5m])
@@ -59,7 +54,7 @@ groups:
           summary: "High share of missing timestamps"
           description: "Udział braków TS > 20% przy ≥100 logach w 5m."
 
-      # 6) Duży udział brakujących timestampów (wariant CRITICAL)
+      # 6) Missing TS (CRITICAL)
       - alert: LogOpsVeryHighMissingTS
         expr: increase(logops_accepted_total[5m]) >= 200
           and ( increase(logops_missing_ts_total[5m])
@@ -71,7 +66,7 @@ groups:
           summary: "Very high share of missing timestamps"
           description: "Udział braków TS > 50% przy ≥200 logach w 5m."
 
-      # 7) Duży udział brakujących leveli (WARNING)
+      # 7) Missing level (WARNING)
       - alert: LogOpsHighMissingLevel
         expr: increase(logops_accepted_total[5m]) >= 100
           and ( increase(logops_missing_level_total[5m])
@@ -83,7 +78,7 @@ groups:
           summary: "High share of missing levels"
           description: "Udział braków level > 20% przy ≥100 logach w 5m."
 
-      # 8) Duży udział brakujących leveli (CRITICAL)
+      # 8) Missing level (CRITICAL)
       - alert: LogOpsVeryHighMissingLevel
         expr: increase(logops_accepted_total[5m]) >= 200
           and ( increase(logops_missing_level_total[5m])
@@ -95,7 +90,7 @@ groups:
           summary: "Very high share of missing levels"
           description: "Udział braków level > 50% przy ≥200 logach w 5m."
 
-      # 9) Kolejka przetwarzania urosła i się utrzymuje (możliwy backpressure)
+      # 9) Inflight stuck high
       - alert: LogOpsInflightStuckHigh
         expr: logops_inflight > 5
         for: 2m
@@ -105,12 +100,48 @@ groups:
           summary: "Inflight gauge high"
           description: "logops_inflight > 5 przez ≥2m (przeciążenie lub zator)."
 
-      # 10) Brak jakichkolwiek metryk z joba (absent) – sygnał na wypadek utraty scrape’a
+      # 10) Absent metrics from gateway
       - alert: LogOpsMetricsAbsent
-        expr: absent(up{job="logops_gateway"})
+        expr: absent(up{job="logops-gateway"})
         for: 2m
         labels:
           severity: critical
         annotations:
           summary: "No metrics scraped from gateway"
-          description: "Prometheus nie widzi żadnych metryk z job='logops_gateway' przez ≥2m."
+          description: "Prometheus nie widzi żadnych metryk z job='logops-gateway' przez ≥2m."
+
+  - name: logops.slo
+    interval: 15s
+    rules:
+      # % batchy < 500ms (30m window)
+      - alert: LogOpsSLOUnder99
+        expr: |
+          (
+            sum(rate(logops_batch_latency_seconds_bucket{le="0.5"}[30m]))
+          /
+            sum(rate(logops_batch_latency_seconds_count[30m]))
+          ) < 0.99
+        for: 30m
+        labels:
+          severity: warning
+          service: logops
+          team: platform
+        annotations:
+          summary: "SLO: <99% batchy <500ms (30m)"
+          description: "Obecnie {{ $value | printf \"%.2f\" }} < 0.99; sprawdź przeciążenie/IO."
+
+      # p95 latency > 0.5s (5m)
+      - alert: LogOpsP95LatencyHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(logops_batch_latency_seconds_bucket[5m]))
+          ) > 0.5
+        for: 5m
+        labels:
+          severity: critical
+          service: logops
+          team: platform
+        annotations:
+          summary: "p95 batch latency > 500ms (≥5m)"
+          description: "p95={{ $value | printf \"%.3f\" }}s; zweryfikuj load, CPU, disk, backpressure."

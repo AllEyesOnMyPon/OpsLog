@@ -29,7 +29,7 @@ W Grafanie (Explore / Loki) użyjesz zapytania:
 
 ### 1. CSV — generator zdarzeń CSV
 Plik: [`emitters/emitter_csv/emit_csv.py`](../../emitters/emitter_csv/emit_csv.py)  
-Szczegóły: [docs/emitters/emitter_csv/README.md](../emitters/emitter_csv/README.md)
+Szczegóły: [docs/emitters/emitter_csv_readme.md](../emitters/emitter_csv_readme.md)
 
 - **Co robi:** tworzy CSV (`ts,level,msg`) z losowymi poziomami i wysyła jako `text/csv`.
 - **Komenda:**
@@ -46,7 +46,7 @@ Szczegóły: [docs/emitters/emitter_csv/README.md](../emitters/emitter_csv/READM
 
 ### 2. JSON — ustrukturyzowane logi aplikacyjne
 Plik: [`emitters/emitter_json/emit_json.py`](../../emitters/emitter_json/emit_json.py)  
-Szczegóły: [docs/emitters/emitter_json/README.md](../emitters/emitter_json/README.md)
+Szczegóły: [docs/emitters/emitter_json_readme.md](../emitters/emitter_json_readme.md)
 
 - **Co robi**: generuje batch JSON (tablica obiektów) w stylu logów serwerowych; pola m.in. `timestamp`, `level`, `message`, `service`, `env`, `host`, `request_id`, `user_email`, `client_ip`, `attrs`.
 
@@ -70,7 +70,7 @@ python emitters/emitter_json/emit_json.py -n 10 --partial-ratio 0.3
 
 ### 3. Minimal — najprostszy smoke test
 Plik: [`emitters/emitter_minimal/emit_minimal.py`](../../emitters/emitter_minimal/emit_minimal.py)  
-Szczegóły: [docs/emitters/emitter_minimal/README.md](../emitters/emitter_minimal/README.md)
+Szczegóły: [docs/emitters/emitter_minimal_readme.md](../emitters/emitter_minimal_readme.md)
 
 - **Co robi**: wysyła batch JSON zawierający wyłącznie pole msg (np. {"msg":"minimal #1"}).
 
@@ -85,7 +85,7 @@ python emitters/emitter_minimal/emit_minimal.py -n 10
 - **Uwagi**: Gateway uzupełni brakujące `ts` i `level` (przyjmie `INFO`).
 ### 4. Noise — „chaotyczne” rekordy testujące odporność
 Plik: [`emitters/emitter_noise/emit_noise.py`](../../emitters/emitter_noise/emit_noise.py)  
-Szczegóły: [docs/emitters/emitter_noise/README.md](../emitters/emitter_noise/README.md)
+Szczegóły: [docs/emitters/emitter_noise_readme.md](../emitters/emitter_noise_readme.md)
 
 - **Co robi**: generuje różnorodne, czasem „wadliwe” rekordy: aliasy kluczy (`message/msg/log`), różne typy wartości (`level` jako liczba/bool), dziwne timestampy, dodatkowe pola (`user_email`, `client_ip`, `attrs`, itp.).
 
@@ -104,7 +104,7 @@ python emitters/emitter_noise/emit_noise.py -n 20 --chaos 0.5 --seed 123
 - **Uwagi**: Idealny do sprawdzania liczników braków (`missing_ts`, `missing_level`) i maskowania PII w złożonych `msg`.
 ### 5. Syslog — linie tekstowe jak w syslogu
 Plik: [`emitters/emitter_syslog/emit_syslog.py`](../../emitters/emitter_syslog/emit_syslog.py)  
-Szczegóły: [docs/emitters/emitter_syslog/README.md](../emitters/emitter_syslog/README.md)
+Szczegóły: [docs/emitters/emitter_syslog_readme.md](../emitters/emitter_syslog_readme.md)
 
 Co robi: buduje linie tekstowe w formacie `YYYY-mm-dd HH:MM:SS [LEVEL] host app[pid]: message ...` i wysyła jako `text/plain`. Każda linia to jeden rekord.
 

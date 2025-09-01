@@ -1,0 +1,25 @@
+auth:
+  mode: "hmac"
+  hmac:
+    clock_skew_sec: 300
+    require_nonce: true
+
+forward:
+  url: "http://127.0.0.1:8080/v1/logs"
+  timeout_sec: 5
+
+ratelimit:
+  per_emitter:
+    capacity: 100
+    refill_per_sec: 100
+
+secrets:
+  clients:
+    demo-pub-1:
+      secret: "demo-priv-1"
+      emitter: "emitter_json"
+
+backpressure:
+  enabled: true
+  max_body_bytes: 200000
+  max_items: 1000

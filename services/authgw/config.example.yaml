@@ -1,0 +1,54 @@
+# services/authgw/config.example.yaml
+
+# Gdzie dalej forwardować po weryfikacji/limicie/backpressure
+forward:
+  url: "http://127.0.0.1:8080/v1/logs"    # docelowy Ingest Gateway (uwaga na port!)
+  timeout_sec: 5                          # mapowane w kodzie na connect_ms=2000, read_ms=(5*1000)
+
+# Autoryzacja
+auth:
+  mode: "hmac"                            # "none" | "api_key" | "hmac" | "any"
+  hmac:
+    clock_skew_sec: 300
+    require_nonce: true
+
+# Rate limiting (per-emitter)
+ratelimit:
+  per_emitter:
+    capacity: 100
+    refill_per_sec: 50
+  # (opcjonalne zróżnicowanie)
+  # by_emitter:
+  #   emitter_json:    { capacity: 200, refill_per_sec: 100 }
+  #   emitter_minimal: { capacity: 50,  refill_per_sec: 25  }
+
+# Retry + circuit breaker do downstream
+retries:
+  max_attempts: 3
+  base_delay_ms: 100
+  max_delay_ms: 1500
+
+breaker:
+  failure_threshold: 20            # % błędów w oknie, kod dzieli na 100
+  window_sec: 30
+  half_open_after_sec: 20
+
+# Backpressure
+backpressure:
+  enabled: true
+  max_body_bytes: 200000           # ~200 KB
+  max_items: 1000                  # np. max 1000 eventów w batchu
+
+# Opcjonalne Redis (nonce replay + RL)
+storage:
+  redis_url: "redis://localhost:6379/0"   # brak/None → fallback in-memory
+
+# Baza klientów
+secrets:
+  clients:
+    demo-pub-1:
+      secret: "demo-priv-1"
+      emitter: "emitter_json"
+    demo-pub-2:
+      secret: "demo-priv-2"
+      emitter: "emitter_minimal"

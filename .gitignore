@@ -1,6 +1,67 @@
+# --- Python cache / build ---
 __pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# --- Virtualenv / deps ---
 .venv/
+env/
+venv/
+
+# --- Testing ---
 .mypy_cache/
 .pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# --- Editors / OS junk ---
 .DS_Store
+*.swp
+*.swo
+*.bak
+
+# --- Local env/secrets ---
 .env
+*.env
+*.secret
+.secret/
+second
+second.pub
+.second
+.second.pub
+
+# --- Logs / runtime state ---
+*.log
+*.out
+*.tmp
+logs/
+run/*.pid
+
+# --- Data dumps (generated during runs) ---
+data/ingest/*.ndjson
+data/scenario_runs/*.jsonl
+
+# --- AuthGW specific configs (local only) ---
+services/authgw/config.yaml
+services/authgw/config.local.yaml
+services/authgw/secrets.yaml
+
+# --- Docker runtime state ---
+infra/docker/*/positions.yaml
+infra/docker/promtail/positions/positions.yaml
+
+# --- Test artifacts ---
+big.json
+many.json
+
+# --- IDE configs (optional, add if used) ---
+.vscode/
+.idea/

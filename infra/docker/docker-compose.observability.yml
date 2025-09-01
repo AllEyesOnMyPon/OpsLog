@@ -3,10 +3,8 @@ services:
     image: grafana/loki:2.9.6
     container_name: logops-loki
     command: -config.file=/etc/loki/config.yml
-    ports:
-      - "3100:3100"
+    ports: ["3100:3100"]
     volumes:
-      # loki config przeniesiony do podkatalogu loki/
       - ./loki/loki-config.yml:/etc/loki/config.yml:ro
       - loki-data:/loki
     networks: [obs]
@@ -16,14 +14,24 @@ services:
     container_name: logops-promtail
     command: -config.file=/etc/promtail/config.yml
     volumes:
-      # promtail config w podkatalogu promtail/
       - ./promtail/promtail-config.yml:/etc/promtail/config.yml:ro
-      # mapowanie katalogu z NDJSON
       - ../../data/ingest:/var/logops/data/ingest:ro
-      # PERSIST: plik pozycji promtaila
-      - ./promtail/positions:/var/lib/promtail
+      - promtail-data:/var/lib/promtail
     depends_on: [loki]
     networks: [obs]
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    container_name: logops-alertmanager
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    ports: ["9093:9093"]
+    # MONTUJEMY *KATALOG* rendered, w którym jest PLIK alertmanager.yml
+    volumes:
+      - ./alertmanager/rendered:/etc/alertmanager:ro
+    networks: [obs]
+    restart: unless-stopped
 
   prometheus:
     image: prom/prometheus:v2.54.0
@@ -32,19 +40,18 @@ services:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
       - --web.enable-lifecycle
-    ports:
-      - "9090:9090"
+    ports: ["9090:9090"]
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
       - prometheus-data:/prometheus
+    depends_on: [alertmanager]
     networks: [obs]
 
   grafana:
     image: grafana/grafana:10.4.0
     container_name: logops-grafana
-    ports:
-      - "3000:3000"
+    ports: ["3000:3000"]
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
     volumes:
@@ -55,9 +62,9 @@ services:
 
 volumes:
   loki-data:
+  promtail-data:
   prometheus-data:
   grafana-data:
-  promtail-data:   # <— NOWE: wolumen na plik pozycji
 
 networks:
   obs:

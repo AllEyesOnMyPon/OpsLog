@@ -1,0 +1,201 @@
+{
+  "title": "LogOps – Observability (SLO)",
+  "uid": "logops-observability-slo",
+  "timezone": "browser",
+  "refresh": "10s",
+  "editable": true,
+  "schemaVersion": 39,
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "level",
+        "label": "Log Level",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "refresh": 1,
+        "query": "label_values({app=\"logops\"}, level)",
+        "current": { "selected": true, "text": "All", "value": ".*" }
+      },
+      {
+        "name": "emitter",
+        "label": "Emitter",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "refresh": 1,
+        "query": "label_values({app=\"logops\"}, emitter)",
+        "current": { "selected": true, "text": "All", "value": ".*" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "EPS (ingested/s)",
+      "id": 1,
+      "gridPos": { "h": 4, "w": 3, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
+      "targets": [{ "expr": "sum(rate(logops_ingested_total[1m]))", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "Accepted (5m)",
+      "id": 2,
+      "gridPos": { "h": 4, "w": 3, "x": 3, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
+      "targets": [{ "expr": "sum(increase(logops_ingested_total[5m]))", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "Accepted (1h)",
+      "id": 3,
+      "gridPos": { "h": 4, "w": 3, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
+      "targets": [{ "expr": "sum(increase(logops_ingested_total[1h]))", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "gauge",
+      "title": "In-flight",
+      "id": 5,
+      "gridPos": { "h": 4, "w": 3, "x": 9, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": { "defaults": { "min": 0, "max": 10, "thresholds": { "mode": "absolute", "steps": [ { "color": "green" }, { "color": "yellow", "value": 3 }, { "color": "red", "value": 7 } ] } } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "showThresholdMarkers": true, "showThresholdLabels": false },
+      "targets": [{ "expr": "logops_inflight", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "SLO: % batchy < 500ms (5m)",
+      "id": 14,
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none", "textMode": "auto", "orientation": "auto" },
+      "fieldConfig": { "defaults": { "unit": "percent", "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": 0 }, { "color": "yellow", "value": 95 }, { "color": "green", "value": 99 } ] } } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * (sum(rate(logops_batch_latency_seconds_bucket{le=\"0.5\"}[5m])) / sum(rate(logops_batch_latency_seconds_count[5m])))",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "p95 batch latency (5m)",
+      "id": 15,
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 3, "thresholds": { "mode": "absolute", "steps": [ { "color": "green" }, { "color": "yellow", "value": 0.5 }, { "color": "red", "value": 1 } ] } } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(logops_batch_latency_seconds_bucket[5m])))",
+          "instant": true
+        }
+      ]
+    },
+
+    {
+      "type": "stat",
+      "title": "Missing TS (5m)",
+      "id": 6,
+      "gridPos": { "h": 4, "w": 3, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "targets": [{ "expr": "sum(increase(logops_missing_ts_total[5m]))", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "Missing Level (5m)",
+      "id": 8,
+      "gridPos": { "h": 4, "w": 3, "x": 3, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "targets": [{ "expr": "sum(increase(logops_missing_level_total[5m]))", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "Parse errors (5m)",
+      "id": 16,
+      "gridPos": { "h": 4, "w": 3, "x": 6, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "targets": [{ "expr": "sum(increase(logops_parse_errors_total[5m]))", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "AuthGW rejected (5m)",
+      "id": 17,
+      "gridPos": { "h": 4, "w": 3, "x": 9, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "targets": [{ "expr": "sum(increase(logops_rejected_total[5m]))", "refId": "A", "instant": true }]
+    },
+    {
+      "type": "stat",
+      "title": "Active alerts",
+      "id": 20,
+      "gridPos": { "h": 4, "w": 3, "x": 12, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "targets": [{ "expr": "sum(ALERTS{alertstate=~\"pending|firing\"})", "refId": "A", "instant": true }]
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Accepted rate by level (Loki, 1m)",
+      "id": 10,
+      "gridPos": { "h": 8, "w": 12, "x": 15, "y": 4 },
+      "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
+      "targets": [
+        { "expr": "sum by (level) (rate({app=\"logops\", level=~\"$level\", emitter=~\"$emitter\"}[1m]))", "refId": "A", "legendFormat": "{{level}}" }
+      ],
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } }
+    },
+
+    {
+      "type": "timeseries",
+      "title": "AuthGW rejected by reason (5m)",
+      "id": 30,
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "targets": [
+        { "expr": "sum by (reason) (increase(logops_rejected_total[5m]))", "refId": "A", "legendFormat": "{{reason}}" }
+      ],
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } }
+    },
+
+    {
+      "type": "table",
+      "title": "Top emitters (1h)",
+      "id": 12,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
+      "targets": [
+        { "expr": "topk(10, sum by (emitter) (count_over_time({app=\"logops\", emitter=~\"$emitter\", level=~\"$level\"}[1h])))", "refId": "A" }
+      ],
+      "options": { "showHeader": true }
+    },
+    {
+      "type": "logs",
+      "title": "Live tail (filtered)",
+      "id": 13,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
+      "targets": [
+        { "expr": "{app=\"logops\", level=~\"$level\", emitter=~\"$emitter\"}", "refId": "A" }
+      ],
+      "options": { "showLabels": true, "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending", "dedupStrategy": "none" }
+    }
+  ]
+}
