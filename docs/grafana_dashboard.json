@@ -1,201 +1,372 @@
 {
-  "title": "LogOps – Observability (SLO)",
-  "uid": "logops-observability-slo",
-  "timezone": "browser",
-  "refresh": "10s",
-  "editable": true,
-  "schemaVersion": 39,
-  "time": { "from": "now-6h", "to": "now" },
-  "templating": {
+  "annotations": {
     "list": [
       {
-        "name": "level",
-        "label": "Log Level",
-        "type": "query",
-        "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
-        "includeAll": true,
-        "allValue": ".*",
-        "multi": true,
-        "refresh": 1,
-        "query": "label_values({app=\"logops\"}, level)",
-        "current": { "selected": true, "text": "All", "value": ".*" }
-      },
-      {
-        "name": "emitter",
-        "label": "Emitter",
-        "type": "query",
-        "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
-        "includeAll": true,
-        "allValue": ".*",
-        "multi": true,
-        "refresh": 1,
-        "query": "label_values({app=\"logops\"}, emitter)",
-        "current": { "selected": true, "text": "All", "value": ".*" }
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
       }
     ]
   },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 3,
+  "links": [],
   "panels": [
     {
-      "type": "stat",
-      "title": "EPS (ingested/s)",
+      "datasource": { "type": "prometheus", "uid": "PROMDS" },
+      "fieldConfig": { "defaults": { "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": 0 }, { "color": "red", "value": 80 } ] } }, "overrides": [] },
+      "gridPos": { "h": 2, "w": 3, "x": 0, "y": 0 },
       "id": 1,
-      "gridPos": { "h": 4, "w": 3, "x": 0, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
-      "targets": [{ "expr": "sum(rate(logops_ingested_total[1m]))", "refId": "A", "instant": true }]
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "percentChangeColorMode": "standard", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "showPercentChange": false, "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "12.1.1",
+      "targets": [ { "expr": "sum(rate(logops_ingested_total[1m]))", "instant": true, "refId": "A" } ],
+      "title": "EPS (ingested/s)",
+      "type": "stat"
     },
     {
-      "type": "stat",
-      "title": "Accepted (5m)",
+      "datasource": { "type": "prometheus", "uid": "PROMDS" },
+      "fieldConfig": { "defaults": { "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": 0 }, { "color": "red", "value": 80 } ] } }, "overrides": [] },
+      "gridPos": { "h": 2, "w": 3, "x": 3, "y": 0 },
       "id": 2,
-      "gridPos": { "h": 4, "w": 3, "x": 3, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
-      "targets": [{ "expr": "sum(increase(logops_ingested_total[5m]))", "refId": "A", "instant": true }]
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "percentChangeColorMode": "standard", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "showPercentChange": false, "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "12.1.1",
+      "targets": [ { "expr": "sum(increase(logops_ingested_total[5m]))", "instant": true, "refId": "A" } ],
+      "title": "Accepted (5m)",
+      "type": "stat"
     },
     {
-      "type": "stat",
-      "title": "Accepted (1h)",
+      "datasource": { "type": "prometheus", "uid": "PROMDS" },
+      "fieldConfig": { "defaults": { "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": 0 }, { "color": "red", "value": 80 } ] } }, "overrides": [] },
+      "gridPos": { "h": 2, "w": 3, "x": 6, "y": 0 },
       "id": 3,
-      "gridPos": { "h": 4, "w": 3, "x": 6, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
-      "targets": [{ "expr": "sum(increase(logops_ingested_total[1h]))", "refId": "A", "instant": true }]
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "percentChangeColorMode": "standard", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "showPercentChange": false, "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "12.1.1",
+      "targets": [ { "expr": "sum(increase(logops_ingested_total[1h]))", "instant": true, "refId": "A" } ],
+      "title": "Accepted (1h)",
+      "type": "stat"
     },
     {
-      "type": "gauge",
-      "title": "In-flight",
-      "id": 5,
+      "datasource": { "type": "prometheus", "uid": "PROMDS" },
+      "fieldConfig": { "defaults": { "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": 0 }, { "color": "red", "value": 80 } ] } }, "overrides": [] },
       "gridPos": { "h": 4, "w": 3, "x": 9, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
-      "fieldConfig": { "defaults": { "min": 0, "max": 10, "thresholds": { "mode": "absolute", "steps": [ { "color": "green" }, { "color": "yellow", "value": 3 }, { "color": "red", "value": 7 } ] } } },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "showThresholdMarkers": true, "showThresholdLabels": false },
-      "targets": [{ "expr": "logops_inflight", "refId": "A", "instant": true }]
-    },
-    {
-      "type": "stat",
-      "title": "SLO: % batchy < 500ms (5m)",
-      "id": 14,
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none", "textMode": "auto", "orientation": "auto" },
-      "fieldConfig": { "defaults": { "unit": "percent", "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": 0 }, { "color": "yellow", "value": 95 }, { "color": "green", "value": 99 } ] } } },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "100 * (sum(rate(logops_batch_latency_seconds_bucket{le=\"0.5\"}[5m])) / sum(rate(logops_batch_latency_seconds_count[5m])))",
-          "instant": true
-        }
-      ]
-    },
-    {
-      "type": "stat",
-      "title": "p95 batch latency (5m)",
-      "id": 15,
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none", "textMode": "auto" },
-      "fieldConfig": { "defaults": { "unit": "s", "decimals": 3, "thresholds": { "mode": "absolute", "steps": [ { "color": "green" }, { "color": "yellow", "value": 0.5 }, { "color": "red", "value": 1 } ] } } },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(logops_batch_latency_seconds_bucket[5m])))",
-          "instant": true
-        }
-      ]
-    },
-
-    {
-      "type": "stat",
-      "title": "Missing TS (5m)",
-      "id": 6,
-      "gridPos": { "h": 4, "w": 3, "x": 0, "y": 4 },
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
-      "targets": [{ "expr": "sum(increase(logops_missing_ts_total[5m]))", "refId": "A", "instant": true }]
-    },
-    {
-      "type": "stat",
-      "title": "Missing Level (5m)",
-      "id": 8,
-      "gridPos": { "h": 4, "w": 3, "x": 3, "y": 4 },
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
-      "targets": [{ "expr": "sum(increase(logops_missing_level_total[5m]))", "refId": "A", "instant": true }]
-    },
-    {
-      "type": "stat",
-      "title": "Parse errors (5m)",
-      "id": 16,
-      "gridPos": { "h": 4, "w": 3, "x": 6, "y": 4 },
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
-      "targets": [{ "expr": "sum(increase(logops_parse_errors_total[5m]))", "refId": "A", "instant": true }]
-    },
-    {
-      "type": "stat",
-      "title": "AuthGW rejected (5m)",
       "id": 17,
-      "gridPos": { "h": 4, "w": 3, "x": 9, "y": 4 },
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
-      "targets": [{ "expr": "sum(increase(logops_rejected_total[5m]))", "refId": "A", "instant": true }]
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "percentChangeColorMode": "standard", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "showPercentChange": false, "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "12.1.1",
+      "targets": [ { "expr": "sum(increase(logops_rejected_total[5m]))", "instant": true, "refId": "A" } ],
+      "title": "AuthGW rejected (5m)",
+      "type": "stat"
     },
     {
-      "type": "stat",
-      "title": "Active alerts",
+      "datasource": { "type": "prometheus", "uid": "PROMDS" },
+      "fieldConfig": { "defaults": { "mappings": [], "max": 10, "min": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": 0 }, { "color": "yellow", "value": 3 }, { "color": "red", "value": 7 } ] } }, "overrides": [] },
+      "gridPos": { "h": 4, "w": 3, "x": 12, "y": 0 },
+      "id": 5,
+      "options": { "minVizHeight": 75, "minVizWidth": 75, "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "showThresholdLabels": false, "showThresholdMarkers": true, "sizing": "auto" },
+      "pluginVersion": "12.1.1",
+      "targets": [ { "expr": "logops_inflight", "instant": true, "refId": "A" } ],
+      "title": "In-flight (IngestGW)",
+      "type": "gauge"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PROMDS" },
+      "fieldConfig": { "defaults": { "mappings": [], "max": 100, "min": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": 0 }, { "color": "yellow", "value": 95 }, { "color": "green", "value": 99 } ] }, "unit": "percent" }, "overrides": [] },
+      "gridPos": { "h": 2, "w": 3, "x": 15, "y": 0 },
+      "id": 14,
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "percentChangeColorMode": "standard", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "showPercentChange": false, "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "12.1.1",
+      "targets": [ { "expr": "100 * (sum(rate(logops_batch_latency_seconds_bucket{le=\"0.5\"}[5m])) / sum(rate(logops_batch_latency_seconds_count[5m])))", "instant": true, "refId": "A" } ],
+      "title": "SLO: % batchy < 500ms (5m)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PROMDS" },
+      "fieldConfig": { "defaults": { "decimals": 3, "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": 0 }, { "color": "yellow", "value": 0.5 }, { "color": "red", "value": 1 } ] }, "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 2, "w": 3, "x": 18, "y": 0 },
+      "id": 15,
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "percentChangeColorMode": "standard", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "showPercentChange": false, "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "12.1.1",
+      "targets": [ { "expr": "histogram_quantile(0.95, sum by (le) (rate(logops_batch_latency_seconds_bucket[5m])))", "instant": true, "refId": "A" } ],
+      "title": "p95 batch latency (5m)",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "PROMDS" },
+      "fieldConfig": { "defaults": { "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": 0 }, { "color": "red", "value": 80 } ] } }, "overrides": [] },
+      "gridPos": { "h": 2, "w": 3, "x": 0, "y": 2 },
+      "id": 6,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "percentChangeColorMode": "standard", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "showPercentChange": false, "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "12.1.1",
+      "targets": [ { "expr": "sum(increase(logops_missing_ts_total{scenario_id=~\"$scenario\",emitter=~\"$p_emitter\"}[5m]))", "instant": true, "refId": "A" } ],
+      "title": "Missing TS (5m)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PROMDS" },
+      "fieldConfig": { "defaults": { "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": 0 }, { "color": "red", "value": 80 } ] } }, "overrides": [] },
+      "gridPos": { "h": 2, "w": 3, "x": 3, "y": 2 },
+      "id": 8,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "percentChangeColorMode": "standard", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "showPercentChange": false, "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "12.1.1",
+      "targets": [ { "expr": "sum(increase(logops_missing_level_total{scenario_id=~\"$scenario\",emitter=~\"$p_emitter\"}[5m]))", "instant": true, "refId": "A" } ],
+      "title": "Missing Level (5m)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PROMDS" },
+      "fieldConfig": { "defaults": { "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": 0 }, { "color": "red", "value": 80 } ] } }, "overrides": [] },
+      "gridPos": { "h": 2, "w": 3, "x": 6, "y": 2 },
+      "id": 16,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "percentChangeColorMode": "standard", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "showPercentChange": false, "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "12.1.1",
+      "targets": [ { "editorMode": "code", "expr": "sum(increase(logops_parse_errors_total{scenario_id=~\"$scenario\",emitter=~\"$p_emitter\"}[5m]))", "instant": true, "refId": "A" } ],
+      "title": "Parse errors (5m)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PROMDS" },
+      "fieldConfig": { "defaults": { "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": 0 }, { "color": "red", "value": 80 } ] } }, "overrides": [] },
+      "gridPos": { "h": 2, "w": 3, "x": 15, "y": 2 },
       "id": 20,
-      "gridPos": { "h": 4, "w": 3, "x": 12, "y": 4 },
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
-      "targets": [{ "expr": "sum(ALERTS{alertstate=~\"pending|firing\"})", "refId": "A", "instant": true }]
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "percentChangeColorMode": "standard", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "showPercentChange": false, "textMode": "auto", "wideLayout": true },
+      "pluginVersion": "12.1.1",
+      "targets": [ { "expr": "sum(ALERTS{alertstate=~\"pending|firing\"})", "instant": true, "refId": "A" } ],
+      "title": "Active alerts",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PROMDS" },
+      "fieldConfig": { "defaults": { "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": 0 }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 } ] }, "unit": "percent" }, "overrides": [] },
+      "gridPos": { "h": 2, "w": 3, "x": 18, "y": 2 },
+      "id": 60,
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "percentChangeColorMode": "standard", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "showPercentChange": false, "textMode": "auto", "wideLayout": true },
+      "targets": [ { "expr": "100 * ( sum(rate(logops_parse_errors_total{scenario_id=~\"$scenario\",emitter=~\"$p_emitter\"}[5m])) / ( sum(rate(logops_parse_errors_total{scenario_id=~\"$scenario\",emitter=~\"$p_emitter\"}[5m])) + sum(rate(logops_accepted_total{scenario_id=~\"$scenario\",emitter=~\"$p_emitter\"}[5m])) ) )", "instant": true, "refId": "A" } ],
+      "title": "Ingest error rate (5m)",
+      "type": "stat"
     },
 
     {
-      "type": "timeseries",
-      "title": "Accepted rate by level (Loki, 1m)",
-      "id": 10,
-      "gridPos": { "h": 8, "w": 12, "x": 15, "y": 4 },
-      "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
-      "targets": [
-        { "expr": "sum by (level) (rate({app=\"logops\", level=~\"$level\", emitter=~\"$emitter\"}[1m]))", "refId": "A", "legendFormat": "{{level}}" }
-      ],
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } }
+      "datasource": { "type": "prometheus", "uid": "PROMDS" },
+      "fieldConfig": { "defaults": { "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": 0 }, { "color": "yellow", "value": 10 }, { "color": "red", "value": 100 } ] } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 4 },
+      "id": 61,
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "percentChangeColorMode": "standard", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "showPercentChange": false, "textMode": "auto", "wideLayout": true },
+      "targets": [ { "expr": "sum(increase(logops_rejected_total{reason=\"429\",scenario_id=~\"$scenario\",emitter=~\"$p_emitter\"}[5m]))", "instant": true, "refId": "A" } ],
+      "title": "AuthGW 429 (5m)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PROMDS" },
+      "fieldConfig": { "defaults": { "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": 0 }, { "color": "yellow", "value": 10 }, { "color": "red", "value": 100 } ] } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 4 },
+      "id": 62,
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "percentChangeColorMode": "standard", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "showPercentChange": false, "textMode": "auto", "wideLayout": true },
+      "targets": [ { "expr": "sum(increase(logops_rejected_total{reason=\"413\",scenario_id=~\"$scenario\",emitter=~\"$p_emitter\"}[5m]))", "instant": true, "refId": "A" } ],
+      "title": "AuthGW 413 (5m)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "LOKIDS" },
+      "fieldConfig": { "defaults": { "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": 0 }, { "color": "yellow", "value": 10 }, { "color": "red", "value": 100 } ] } }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 4 },
+      "id": 63,
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "showPercentChange": false, "textMode": "auto", "wideLayout": true },
+      "targets": [ { "expr": "sum(count_over_time({app=\"logops\",scenario_id=~\"$scenario\",emitter=~\"$emitter\",level=~\"WARN|ERROR\"}[5m]))", "refId": "A" } ],
+      "title": "WARN+ERROR (5m)",
+      "type": "stat"
     },
 
     {
-      "type": "timeseries",
-      "title": "AuthGW rejected by reason (5m)",
-      "id": 30,
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 8 },
-      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
-      "targets": [
-        { "expr": "sum by (reason) (increase(logops_rejected_total[5m]))", "refId": "A", "legendFormat": "{{reason}}" }
-      ],
-      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true } }
-    },
-
-    {
-      "type": "table",
-      "title": "Top emitters (1h)",
-      "id": 12,
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
-      "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
-      "targets": [
-        { "expr": "topk(10, sum by (emitter) (count_over_time({app=\"logops\", emitter=~\"$emitter\", level=~\"$level\"}[1h])))", "refId": "A" }
-      ],
-      "options": { "showHeader": true }
-    },
-    {
-      "type": "logs",
-      "title": "Live tail (filtered)",
+      "datasource": { "type": "loki", "uid": "LOKIDS" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 12 },
       "id": 13,
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
-      "datasource": { "type": "loki", "uid": "P8E80F9AEF21F6940" },
-      "targets": [
-        { "expr": "{app=\"logops\", level=~\"$level\", emitter=~\"$emitter\"}", "refId": "A" }
-      ],
-      "options": { "showLabels": true, "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending", "dedupStrategy": "none" }
+      "options": { "dedupStrategy": "none", "enableInfiniteScrolling": false, "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": true, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "pluginVersion": "12.1.1",
+      "targets": [ { "expr": "{app=\"logops\", scenario_id=~\"$scenario\", level=~\"$level\", emitter=~\"$emitter\"}", "refId": "A" } ],
+      "title": "Live tail (filtered)",
+      "type": "logs"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "PROMDS" },
+      "fieldConfig": { "defaults": { "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": 0 }, { "color": "red", "value": 1 } ] } }, "overrides": [] },
+      "gridPos": { "h": 2, "w": 3, "x": 0, "y": 22 },
+      "id": 41,
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false } },
+      "targets": [ { "expr": "sum(logops_orch_running{scenario_id=~\"$scenario\"})", "instant": true, "refId": "A" } ],
+      "title": "Orchestrator: running scenarios",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PROMDS" },
+      "fieldConfig": { "defaults": { "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": 0 }, { "color": "red", "value": 2000 } ] } }, "overrides": [] },
+      "gridPos": { "h": 2, "w": 3, "x": 3, "y": 22 },
+      "id": 42,
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "percentChangeColorMode": "standard", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false } },
+      "targets": [ { "expr": "sum(rate(logops_orch_emitted_total{scenario_id=~\"$scenario\",emitter=~\"$p_emitter\"}[1m]))", "instant": true, "refId": "A" } ],
+      "title": "Orchestrator EPS (1m)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PROMDS" },
+      "fieldConfig": { "defaults": { "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": 0 }, { "color": "red", "value": 1 } ] } }, "overrides": [] },
+      "gridPos": { "h": 2, "w": 3, "x": 6, "y": 22 },
+      "id": 43,
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false } },
+      "targets": [ { "expr": "sum(increase(logops_orch_errors_total{scenario_id=~\"$scenario\"}[5m]))", "instant": true, "refId": "A" } ],
+      "title": "Orchestrator errors (5m)",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "PROMDS" },
+      "fieldConfig": { "defaults": { "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": 0 }, { "color": "red", "value": 80 } ] } }, "overrides": [] },
+      "gridPos": { "h": 2, "w": 3, "x": 9, "y": 22 },
+      "id": 44,
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false } },
+      "targets": [ { "expr": "sum(increase(core_accepted_total{scenario_id=~\"$scenario\",emitter=~\"$p_emitter\"}[5m]))", "instant": true, "refId": "A" } ],
+      "title": "Core accepted (5m)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PROMDS" },
+      "fieldConfig": { "defaults": { "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": 0 }, { "color": "red", "value": 1 } ] } }, "overrides": [] },
+      "gridPos": { "h": 2, "w": 3, "x": 12, "y": 22 },
+      "id": 45,
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false } },
+      "targets": [ { "expr": "sum(increase(core_rejected_total[5m]))", "instant": true, "refId": "A" } ],
+      "title": "Core rejected (5m)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PROMDS" },
+      "fieldConfig": { "defaults": { "mappings": [], "max": 50, "min": 0, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": 0 }, { "color": "yellow", "value": 10 }, { "color": "red", "value": 25 } ] } }, "overrides": [] },
+      "gridPos": { "h": 2, "w": 3, "x": 15, "y": 22 },
+      "id": 46,
+      "options": { "minVizHeight": 75, "minVizWidth": 75, "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "showThresholdLabels": false, "showThresholdMarkers": true, "sizing": "auto" },
+      "targets": [ { "expr": "core_inflight", "instant": true, "refId": "A" } ],
+      "title": "In-flight (Core)",
+      "type": "gauge"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PROMDS" },
+      "fieldConfig": { "defaults": { "decimals": 3, "unit": "s", "mappings": [], "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": 0 }, { "color": "yellow", "value": 0.5 }, { "color": "red", "value": 1 } ] } }, "overrides": [] },
+      "gridPos": { "h": 2, "w": 3, "x": 18, "y": 22 },
+      "id": 47,
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false } },
+      "targets": [ { "expr": "histogram_quantile(0.95, sum by (le) (rate(core_request_latency_seconds_bucket[5m])))", "instant": true, "refId": "A" } ],
+      "title": "Core p95 req latency (5m)",
+      "type": "stat"
+    },
+
+    {
+      "datasource": { "type": "prometheus", "uid": "PROMDS" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "axisBorderShow": false, "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "barWidthFactor": 0.6, "drawStyle": "line", "fillOpacity": 0, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "insertNulls": false, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "auto", "spanNulls": false, "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "off" } },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": 0 }, { "color": "red", "value": 80 } ] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "id": 48,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "single", "sort": "none" } },
+      "targets": [ { "expr": "sum by (emitter) (rate(logops_orch_emitted_total{scenario_id=~\"$scenario\",emitter=~\"$p_emitter\"}[1m]))", "legendFormat": "emitter={{emitter}}", "refId": "A" } ],
+      "title": "Orchestrator EPS by emitter (1m)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "PROMDS" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "axisBorderShow": false, "axisCenteredZero": false, "axisColorMode": "text", "axisLabel": "", "axisPlacement": "auto", "barAlignment": 0, "barWidthFactor": 0.6, "drawStyle": "line", "fillOpacity": 0, "gradientMode": "none", "hideFrom": { "legend": false, "tooltip": false, "viz": false }, "insertNulls": false, "lineInterpolation": "linear", "lineWidth": 1, "pointSize": 5, "scaleDistribution": { "type": "linear" }, "showPoints": "auto", "spanNulls": false, "stacking": { "group": "A", "mode": "none" }, "thresholdsStyle": { "mode": "off" } },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": 0 }, { "color": "red", "value": 80 } ] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "id": 49,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "single", "sort": "none" } },
+      "targets": [ { "expr": "sum by (emitter,level) (rate(logops_ingested_total{emitter=~\"$p_emitter\"}[1m]))", "legendFormat": "emitter={{emitter}} level={{level}}", "refId": "A" } ],
+      "title": "Ingest rate by level (Prometheus, 1m)",
+      "type": "timeseries"
     }
-  ]
+  ],
+  "preload": false,
+  "refresh": "10s",
+  "schemaVersion": 41,
+  "tags": [],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": { "text": [ "All" ], "value": [ "$__all" ] },
+        "datasource": { "type": "loki", "uid": "LOKIDS" },
+        "includeAll": true,
+        "label": "Log Level",
+        "multi": true,
+        "name": "level",
+        "options": [],
+        "query": "label_values({app=\"logops\"}, level)",
+        "refresh": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": { "text": [ "All" ], "value": [ "$__all" ] },
+        "datasource": { "type": "loki", "uid": "LOKIDS" },
+        "includeAll": true,
+        "label": "Emitter",
+        "multi": true,
+        "name": "emitter",
+        "options": [],
+        "query": "label_values({app=\"logops\"}, emitter)",
+        "refresh": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": { "text": [ "All" ], "value": [ "$__all" ] },
+        "datasource": { "type": "prometheus", "uid": "PROMDS" },
+        "includeAll": true,
+        "label": "Scenario",
+        "multi": true,
+        "name": "scenario",
+        "options": [],
+        "query": "label_values(logops_orch_running, scenario_id)",
+        "refresh": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": { "text": [ "All" ], "value": [ "$__all" ] },
+        "datasource": { "type": "prometheus", "uid": "PROMDS" },
+        "includeAll": true,
+        "label": "Emitter (Prom)",
+        "multi": true,
+        "name": "p_emitter",
+        "options": [],
+        "query": "label_values(logops_ingested_total, emitter)",
+        "refresh": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-3h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "LogOps: E2E SLO (Ingest/Auth/Core + Orchestrator)",
+  "uid": "logops-observability-slo",
+  "version": 11
 }

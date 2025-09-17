@@ -1,55 +1,115 @@
-# Housekeeping
+# Housekeeping (NDJSON cleanup & archive)
 
-Housekeeping odpowiada za utrzymanie katalogu z logami (`data/ingest/`).  
-Jest to proces usuwania lub archiwizacji starych plików **NDJSON** generowanych przez gateway.
+Narzędzie do sprzątania katalogu z dziennymi plikami **NDJSON** (np. `data/ingest/20250101.ndjson`).
+Usuwa pliki starsze niż `RETENTION_DAYS` lub — w trybie archiwizacji — pakuje je do ZIP i usuwa oryginały.
 
----
-
-## 🔧 Konfiguracja ENV
-
-- `LOGOPS_SINK_DIR` – katalog z plikami NDJSON (domyślnie: `./data/ingest`)  
-- `LOGOPS_RETENTION_DAYS` – ile dni przechowywać logi (domyślnie: `7`)  
-- `LOGOPS_ARCHIVE_MODE` – tryb dla starych plików:  
-  - `delete` (domyślnie) – usuwa pliki starsze niż retention  
-  - `zip` – pakuje do `./data/archive/YYYYMMDD.zip` i usuwa oryginał  
-- `LOGOPS_HOUSEKEEP_AUTORUN` – (`true|false`) czy uruchomić housekeeping przy starcie gatewaya  
-- `LOGOPS_HOUSEKEEP_INTERVAL_SEC` – co ile sekund powtarzać housekeeping w tle (0 = nie uruchamiaj pętli)
+**Plik:** `tools/housekeeping.py`
+**Wymaga:** Python 3.10+, (opcjonalnie) `python-dotenv` dla odczytu `.env`
 
 ---
 
-## 🖥️ Uruchamianie
+## Jak działa
 
-### Ręczne
+- Wczytuje konfigurację z **ENV** (priorytet) oraz z **.env** w katalogu repo (fallback).
+- Szuka plików w `LOGOPS_SINK_DIR` pasujących do wzorca `YYYYMMDD.ndjson`.
+- Dla każdego pliku oblicza datę (`YYYYMMDD` w **UTC**) i porównuje z progiem:
+  `now(UTC) - LOGOPS_RETENTION_DAYS`.
+- Dla plików starszych niż próg:
+  - **delete** (domyślnie): usuwa plik,
+  - **zip**: dopisuje plik do `data/archive/YYYYMMDD.zip` (ZIP_DEFLATED), po czym usuwa oryginał.
+- Loguje akcje na STDOUT z prefiksem `[housekeep]`.
+
+> Pliki, których nazwy **nie** mają formatu `YYYYMMDD.ndjson`, są ignorowane.
+
+---
+
+## Konfiguracja (ENV / `.env`)
+
+| Zmienna                 | Domyślnie           | Opis |
+|-------------------------|---------------------|------|
+| `LOGOPS_SINK_DIR`       | `./data/ingest`     | Katalog z plikami NDJSON do sprzątania |
+| `LOGOPS_RETENTION_DAYS` | `7`                 | Ile dni trzymać pliki |
+| `LOGOPS_ARCHIVE_MODE`   | `delete`            | `delete` lub `zip` (archiwum trafia do `./data/archive`) |
+
+> Jeśli `LOGOPS_ARCHIVE_MODE=zip`, katalog `data/archive/` zostanie utworzony automatycznie.
+
+---
+
+## Uruchamianie
+
+### Jednorazowo (ręcznie)
 ```bash
 python tools/housekeeping.py
 ```
-Wykona pojedyncze przejście (usunie/zarchiwizuje stare pliki NDJSON).
 
-**Z gatewaya**
+Przykładowy wynik:
+```
+[housekeep] archived 20240815.ndjson -> 20240815.zip
+[housekeep] deleted 20240814.ndjson
+```
 
-Gateway może:
+### Z poziomu kodu (mostek do gatewaya)
+```python
+from tools.housekeeping import run_once
 
-- wywołać housekeeping przy starcie (`LOGOPS_HOUSEKEEP_AUTORUN=true`)
+run_once()  # wykona pojedyncze sprzątanie wg ENV/.env
+```
 
-- uruchomić pętlę cykliczną (`LOGOPS_HOUSEKEEP_INTERVAL_SEC>0`)
+> Gateway może wywoływać `run_once()` na starcie lub cyklicznie (patrz dokumentacja gatewayów / zmienne `LOGOPS_HOUSEKEEP_AUTORUN`, `LOGOPS_HOUSEKEEP_INTERVAL_SEC` po ich stronie).
 
-- loguje wynik jako `[housekeep] ...` w logach aplikacji.
+### Cron (Linux)
+```cron
+# Codziennie o 03:15 UTC
+15 3 * * * cd /ścieżka/do/logops && /usr/bin/python3 tools/housekeeping.py >> /var/log/logops-housekeep.log 2>&1
+```
 
-## Struktura
+---
 
-- `data/ingest/YYYYMMDD.ndjson` – logi z danego dnia (output gatewaya)
+## Struktura katalogów
 
-- `data/archive/YYYYMMDD.zip` – archiwum (jeśli tryb = zip)
+- `data/ingest/YYYYMMDD.ndjson` — pliki dzienne generowane przez gatewaye
+- `data/archive/YYYYMMDD.zip` — archiwa (gdy `LOGOPS_ARCHIVE_MODE=zip`)
 
-## Efekty i wpływ
+---
 
-- Usunięcie/archiwizacja starych plików wpływa na dane widoczne w **Promtail/Loki** (znikają starsze logi).
+## Najczęstsze pytania (FAQ)
 
-- Operacja housekeeping nie dotyka danych w Prometheusie ani w Grafanie.
-## Typowe scenariusze
+**Q:** Co jeśli katalog `LOGOPS_SINK_DIR` nie istnieje?
+**A:** Skrypt wypisze informację i zakończy się bez błędu.
 
-- **Dev/test lokalny** – domyślnie retention 7 dni, tryb delete.
+**Q:** Czy housekeeping usuwa logi z Loki/Grafana?
+**A:** Nie. Dotyka **tylko plików** NDJSON na dysku. Dane już wciągnięte do Loki pozostają niezależne.
 
-- **Dłuższe trzymanie logów** – ustaw `LOGOPS_RETENTION_DAYS=30` i `LOGOPS_ARCHIVE_MODE=zip` aby mieć kopie w `data/archive/`.
+**Q:** Czy obsługiwane są pliki o innych nazwach?
+**A:** Nie. Tylko `YYYYMMDD.ndjson` (inne są pomijane).
 
-- **Ciągła praca gatewaya** – ustaw `LOGOPS_HOUSEKEEP_AUTORUN=true` i np. `LOGOPS_HOUSEKEEP_INTERVAL_SEC=3600` (raz na godzinę).
+**Q:** Czy archiwum jest „appendowane”?
+**A:** Tak. Dla danego dnia skrypt dopisze zawartość do `YYYYMMDD.zip` (tryb `'a'`), a potem usunie oryginał.
+
+---
+
+## Przykłady konfiguracji
+
+**Dev lokalnie, minimum:**
+```env
+LOGOPS_SINK_DIR=./data/ingest
+LOGOPS_RETENTION_DAYS=7
+LOGOPS_ARCHIVE_MODE=delete
+```
+
+**Trzymaj 30 dni i archiwizuj:**
+```env
+LOGOPS_SINK_DIR=./data/ingest
+LOGOPS_RETENTION_DAYS=30
+LOGOPS_ARCHIVE_MODE=zip
+```
+
+---
+
+## Bezpieczeństwo i idempotencja
+
+- Operacja jest **idempotentna** względem pojedynczego przebiegu — pliki spełniające kryterium zostaną usunięte/zarchiwizowane raz.
+- Skrypt działa na podstawie **nazwy pliku** (daty w nazwie), a nie mtime — to gwarantuje jednoznaczność.
+- Działa w **UTC**, więc nie jest wrażliwy na lokalne strefy czasu.
+
+---

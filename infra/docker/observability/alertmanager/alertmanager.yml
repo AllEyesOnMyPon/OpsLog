@@ -1,0 +1,25 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: slack-main
+  group_by: ['alertname', 'service']
+  group_wait: 10s
+  group_interval: 1m
+  repeat_interval: 2h
+
+receivers:
+  - name: slack-main
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/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'
+        send_resolved: true
+        title: >-
+          [{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}
+          {{- if .CommonLabels.severity }} ({{ .CommonLabels.severity }}){{- end }}
+        text: |-
+          {{- range .Alerts }}
+          *{{ .Annotations.summary }}*
+          {{ .Annotations.description }}
+          • Labels: {{ .Labels }}
+          • StartsAt: {{ .StartsAt }}
+          {{- end }}

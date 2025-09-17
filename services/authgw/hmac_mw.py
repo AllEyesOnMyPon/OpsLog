@@ -1,155 +1,238 @@
-import os
+# services/authgw/hmac_mw.py
+from __future__ import annotations
+
 import base64
 import hashlib
 import hmac
-import time
 import logging
-from datetime import datetime
-from typing import Optional
+import time
+from datetime import UTC, datetime
+from typing import Any
 
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
+from fastapi import Request
+from fastapi.responses import JSONResponse
 
-# Ścieżki bez autoryzacji (health/metrics)
-ALLOW_PATHS = {"/healthz", "/metrics"}
+__all__ = ["HmacAuthMiddleware"]
 
 logger = logging.getLogger("authgw.hmac")
 
 
-def _parse_iso8601(ts: str) -> int:
-    """Zwraca timestamp (sekundy) z ISO8601, akceptuje sufiks 'Z'."""
-    if ts.endswith("Z"):
-        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-    else:
+def _debug_hmac() -> bool:
+    import os
+
+    v = os.getenv("AUTHGW_DEBUG_HMAC", "")
+    return v not in ("", "0", "false", "False", "no", "NO")
+
+
+def _parse_ts(ts: str) -> datetime | None:
+    """Próbuje sparsować ISO8601; wspiera sufiks 'Z' i offsety."""
+    try:
+        if ts.endswith("Z"):
+            # 2025-09-06T12:34:56Z
+            return datetime.fromisoformat(ts[:-1]).replace(tzinfo=UTC)
+        # 2025-09-06T12:34:56+00:00
         dt = datetime.fromisoformat(ts)
-    return int(dt.timestamp())
+        if dt.tzinfo is None:
+            # potraktuj jako UTC jeśli brak strefy
+            dt = dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC)
+    except Exception:
+        return None
 
 
-def _path_with_query(request) -> str:
-    """Zwróć ścieżkę z zapytaniem (bez schematu/hosta)."""
-    path = request.url.path
-    return path + (f"?{request.url.query}" if request.url.query else "")
-
-
-class HmacAuthMiddleware(BaseHTTPMiddleware):
+class HmacAuthMiddleware:
     """
-    Tryby:
-      - "off"     : brak auth
-      - "apikey"  : wymaga X-Api-Key
-      - "hmac"    : wymaga HMAC (X-Api-Key, X-Timestamp, X-Content-SHA256, X-Signature [+ X-Nonce opcjonalnie])
-      - "any"     : akceptuje apikey albo pełny HMAC
+    Canonical (zgodny z tools/sign_hmac.py):
+      METHOD\nPATH\nSHA256_HEX(body)\nX-Timestamp\nX-Nonce
 
-    client_db: { <api_key>: { "secret": "...", "emitter": "..." } }
+    X-Signature = base64( HMAC_SHA256(secret, canonical) )
+
+    Dodatkowo:
+    - weryfikacja X-Timestamp względem clock_skew_sec (UTC)
+    - ochrona przed replay (nonce + Redis/in-memory)
     """
 
     def __init__(
         self,
         app,
-        mode: str,
-        client_db: dict,
-        redis=None,
-        clock_skew: float = 300,
+        *,
+        mode: str = "hmac",
+        clients: dict[str, dict[str, Any]] | None = None,
+        clock_skew_sec: int = 300,
         require_nonce: bool = True,
+        nonce_store=None,
     ):
-        super().__init__(app)
+        self.app = app
         self.mode = (mode or "hmac").lower()
-        self.client_db = client_db or {}
-        self.redis = redis
-        self.clock_skew = float(clock_skew)
+        self.clients = clients or {}
+        self.clock_skew_sec = int(clock_skew_sec or 0)
         self.require_nonce = bool(require_nonce)
-        # Debug tylko, gdy explicit ENV
-        self.env_debug = str(os.getenv("AUTHGW_DEBUG", "0")).lower() in {"1", "true", "yes", "on"}
+        self.nonce_store = nonce_store
+        self._nonce_cache: dict[str, float] = {}
 
-    async def dispatch(self, request, call_next):
-        # Bez auth dla health/metrics lub gdy tryb "off"
-        if request.url.path in ALLOW_PATHS or self.mode == "off":
-            return await call_next(request)
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
 
-        api_key: Optional[str] = request.headers.get("X-Api-Key")
-        if not api_key:
-            return JSONResponse({"error": "missing X-Api-Key"}, 401)
+        request = Request(scope, receive=receive)
+        path = request.url.path
 
-        client = self.client_db.get(api_key)
-        if not client:
-            return JSONResponse({"error": "invalid api key"}, 401)
+        # BYPASS dla sond/obserwacji i dokumentacji
+        if path in (
+            "/metrics",
+            "/health",
+            "/healthz",
+            "/openapi.json",
+            "/docs",
+            "/redoc",
+            "/docs/oauth2-redirect",
+        ):
+            return await self.app(scope, receive, send)
 
-        # tryb api_key → przekaż emitter downstream
-        if self.mode == "apikey":
-            scope_headers = list(request.headers.raw)
-            scope_headers.append((b"x-emitter", client["emitter"].encode()))
-            request.scope["headers"] = scope_headers
-            return await call_next(request)
+        if self.mode == "none":
+            return await self.app(scope, receive, send)
 
-        # Tryby HMAC/ANY
-        ts = request.headers.get("X-Timestamp")
-        sign = request.headers.get("X-Signature")
-        body_hash_hdr = request.headers.get("X-Content-SHA256")
-        nonce = request.headers.get("X-Nonce")
-
-        # W "any" brak kompletów HMAC → traktuj jak apikey
-        if self.mode == "any" and not (ts and sign and body_hash_hdr):
-            scope_headers = list(request.headers.raw)
-            scope_headers.append((b"x-emitter", client["emitter"].encode()))
-            request.scope["headers"] = scope_headers
-            return await call_next(request)
-
-        # Wymagamy kompletu HMAC
-        if not (ts and sign and body_hash_hdr):
-            return JSONResponse({"error": "missing hmac headers"}, 401)
-
-        # Parsowanie TS
         try:
-            t_client = _parse_iso8601(ts)
+            # 1) API key
+            api_key: str | None = request.headers.get("x-api-key")
+            if not api_key:
+                return await JSONResponse({"error": "missing X-Api-Key"}, 401)(scope, receive, send)
+
+            client = self.clients.get(api_key)
+            if not client or not client.get("secret"):
+                return await JSONResponse({"error": "invalid api key"}, 401)(scope, receive, send)
+
+            if self.mode == "apikey":
+                # w trybie apikey tylko uzupełniamy state
+                self._populate_state(request, api_key, client, b"")
+                return await self.app(scope, receive, send)
+
+            # 2) HMAC headers
+            ts = request.headers.get("x-timestamp")
+            sign = request.headers.get("x-signature")
+            body_hash_hdr = request.headers.get("x-content-sha256")
+            nonce = request.headers.get("x-nonce")
+
+            if not (ts and sign and body_hash_hdr):
+                return await JSONResponse({"error": "missing hmac headers"}, 401)(
+                    scope, receive, send
+                )
+
+            # 3) Timestamp skew
+            dt = _parse_ts(ts)
+            if dt is None:
+                return await JSONResponse({"error": "bad X-Timestamp"}, 400)(scope, receive, send)
+            now = datetime.now(UTC)
+            if self.clock_skew_sec and abs((now - dt).total_seconds()) > self.clock_skew_sec:
+                return await JSONResponse({"error": "timestamp skew"}, 401)(scope, receive, send)
+
+            # 4) Nonce replay
+            if self.require_nonce:
+                if not nonce:
+                    return await JSONResponse({"error": "missing X-Nonce"}, 401)(
+                        scope, receive, send
+                    )
+                if await self._nonce_seen(api_key, nonce):
+                    return await JSONResponse({"error": "nonce replay"}, 401)(scope, receive, send)
+
+            # 5) Body + jego SHA256 (HEX)
+            body = await request.body()
+            body_sha256_hex = hashlib.sha256(body).hexdigest()
+            if (body_hash_hdr or "").lower() != body_sha256_hex.lower():
+                return await JSONResponse({"error": "bad X-Content-SHA256"}, 400)(
+                    scope, receive, send
+                )
+
+            # 6) Canonical + podpis
+            method = request.method.upper()
+            path_only = request.url.path
+            canonical = "\n".join([method, path_only, body_sha256_hex, ts, nonce or ""])
+            expected_b64 = base64.b64encode(
+                hmac.new(
+                    client["secret"].encode("utf-8"), canonical.encode("utf-8"), hashlib.sha256
+                ).digest()
+            ).decode("ascii")
+
+            if not hmac.compare_digest(sign, expected_b64):
+                if _debug_hmac():
+                    logger.error(
+                        "HMAC mismatch\ncanonical:\n%s\nexpected:%s\nprovided:%s",
+                        canonical,
+                        expected_b64,
+                        sign,
+                    )
+                return await JSONResponse({"error": "bad signature"}, 401)(scope, receive, send)
+
+            # 7) zapamiętaj nonce
+            if self.require_nonce:
+                await self._nonce_remember(api_key, nonce, ttl=self.clock_skew_sec or 300)
+
+            # 8) uzupełnij state i reinject body
+            self._populate_state(request, api_key, client, body)
+
+            async def receive_with_buffer(sent=None):
+                if sent is None:
+                    sent = [False]
+                if not sent[0]:
+                    sent[0] = True
+                    return {"type": "http.request", "body": body, "more_body": False}
+                return {"type": "http.request", "body": b"", "more_body": False}
+
+            return await self.app(scope, receive_with_buffer, send)
+
         except Exception:
-            return JSONResponse({"error": "bad X-Timestamp"}, 400)
+            logger.exception("HMAC middleware error")
+            return await JSONResponse({"error": "internal auth error"}, 500)(scope, receive, send)
 
-        # Skew check
+    # --- helpers ---
+
+    def _populate_state(self, request: Request, api_key: str, client: dict[str, Any], body: bytes):
+        emitter = client.get("emitter") or request.headers.get("x-emitter") or "unknown"
+
+        # IP z gniazda albo X-Forwarded-For
+        client_ip = None
+        try:
+            client_ip = (request.scope.get("client") or (None, None))[0]
+        except Exception:
+            client_ip = None
+        client_ip = client_ip or request.headers.get("x-forwarded-for") or ""
+
+        scenario_id = (
+            request.headers.get("x-scenario-id") or request.headers.get("x-scenario") or None
+        )
+
+        request.state.api_key = api_key
+        request.state.client = client
+        request.state.emitter = emitter
+        request.state.client_ip = client_ip
+        request.state.scenario_id = scenario_id
+        request.state.raw_body = body
+
+    async def _nonce_seen(self, api_key: str, nonce: str) -> bool:
+        key = f"hmac:nonce:{api_key}:{nonce}"
+        if self.nonce_store:
+            val = self.nonce_store.get(key)
+            if callable(getattr(val, "__await__", None)):
+                val = await val
+            return val is not None
         now = time.time()
-        diff = abs(now - float(t_client))
+        for k, exp in list(self._nonce_cache.items()):
+            if exp <= now:
+                self._nonce_cache.pop(k, None)
+        return key in self._nonce_cache
 
-        # Debug tylko, gdy env włączony + nagłówek proszący o debug
-        if self.env_debug and request.headers.get("X-Debug-HMAC") == "1":
-            logger.debug(
-                "HMAC debug: now=%.3f client=%.3f diff=%.3f skew=%.3f mode=%s",
-                now, float(t_client), diff, self.clock_skew, self.mode
-            )
-
-        if diff > self.clock_skew:
-            return JSONResponse({"error": "timestamp skew"}, 401)
-
-        # Nonce / anty-replay
-        if self.require_nonce:
-            if not nonce:
-                return JSONResponse({"error": "missing X-Nonce"}, 401)
-            if self.redis:
-                key = f"hmac:nonce:{api_key}:{nonce}"
-                added = await self.redis.setnx(key, "1")
-                if not added:
-                    return JSONResponse({"error": "replay detected"}, 401)
-                await self.redis.expire(key, 300)
-
-        # Hash ciała
-        raw = await request.body()
-        calc_hash = hashlib.sha256(raw).hexdigest()
-        if body_hash_hdr and body_hash_hdr != calc_hash:
-            return JSONResponse({"error": "body hash mismatch"}, 401)
-
-        # Kanoniczny ciąg i podpis
-        canonical = "\n".join([
-            request.method.upper(),
-            _path_with_query(request),
-            ts,
-            calc_hash,
-        ]).encode()
-
-        mac = hmac.new(client["secret"].encode(), canonical, hashlib.sha256).digest()
-        expected = base64.b64encode(mac).decode()
-        if not hmac.compare_digest(sign, expected):
-            return JSONResponse({"error": "bad signature"}, 401)
-
-        # Dołóż emitter downstream (np. do RL)
-        scope_headers = list(request.headers.raw)
-        scope_headers.append((b"x-emitter", client["emitter"].encode()))
-        request.scope["headers"] = scope_headers
-
-        return await call_next(request)
+    async def _nonce_remember(self, api_key: str, nonce: str, ttl: int = 300):
+        key = f"hmac:nonce:{api_key}:{nonce}"
+        if self.nonce_store:
+            setex = getattr(self.nonce_store, "setex", None)
+            if setex:
+                rv = setex(key, ttl, "1")
+                if callable(getattr(rv, "__await__", None)):
+                    await rv
+                return
+            rv = self.nonce_store.set(key, "1")
+            if callable(getattr(rv, "__await__", None)):
+                await rv
+            return
+        self._nonce_cache[key] = time.time() + max(1, int(ttl))
+        # prosta pamięć w RAM, bez TTL cleanup (czyszczenie przy sprawdzaniu)

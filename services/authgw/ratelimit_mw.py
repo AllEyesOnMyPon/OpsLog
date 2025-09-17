@@ -1,139 +1,126 @@
-# services/authgw/ratelimit_mw.py
-from __future__ import annotations
-
-import math
 import time
-from typing import Dict, Optional, Tuple
 
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
-
-# Ścieżki wyłączone z limitowania (health / metryki)
-ALLOW_PATHS = {"/healthz", "/metrics"}
+from fastapi import Request
+from fastapi.responses import JSONResponse
 
 
-class TokenBucketRL(BaseHTTPMiddleware):
+class _Bucket:
+    __slots__ = ("capacity", "refill_per_sec", "tokens", "ts")
+
+    def __init__(self, capacity: int, refill_per_sec: int):
+        self.capacity = max(1, int(capacity))
+        self.refill_per_sec = max(1, int(refill_per_sec))
+        self.tokens = float(self.capacity)
+        self.ts = time.monotonic()
+
+    def allow(self) -> bool:
+        now = time.monotonic()
+        delta = max(0.0, now - self.ts)
+        self.ts = now
+        self.tokens = min(self.capacity, self.tokens + delta * self.refill_per_sec)
+        if self.tokens >= 1.0:
+            self.tokens -= 1.0
+            return True
+        return False
+
+
+class TokenBucketRL:
     """
-    Prosty token-bucket per-emitter (w Redis lub lokalnie).
-    - Każdy request zużywa 1 token.
-    - Tokeny uzupełniają się w tempie `refill_per_sec` aż do `capacity`.
-    - Gdy brak tokenów, 429 + Retry-After (czas do odnowienia 1 tokena).
+    Prosty token bucket per-emitter (in-memory) lub Redis jeśli podany.
+    Konstruktor (ważne nazwy!):
+      - default_capacity: int
+      - default_refill:   int
+      - per_emitter: Dict[str, Dict[str, int]]
+      - redis: opcjonalny klient redis-py (async)
     """
 
     def __init__(
         self,
         app,
-        default_capacity: float,
-        default_refill: float,
-        per_emitter: Optional[Dict[str, Dict[str, float]]] = None,
-        redis=None,  # `redis.asyncio` lub None
+        *,
+        default_capacity: int = 100,
+        default_refill: int = 50,
+        per_emitter: dict[str, dict[str, int]] | None = None,
+        redis=None,
     ):
-        super().__init__(app)
-        self.default_capacity = float(default_capacity)
-        self.default_refill = float(default_refill)
+        self.app = app
+        self.default_capacity = int(default_capacity)
+        self.default_refill = int(default_refill)
         self.per_emitter = per_emitter or {}
         self.redis = redis
-        # fallback in-memory: emitter -> (tokens, last_ts)
-        self.local: Dict[str, Tuple[float, float]] = {}
+        self._mem: dict[str, _Bucket] = {}
 
-    # ---------- wspólne narzędzia ----------
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
 
-    @staticmethod
-    def _calc_next(tokens: float, last: float, now: float, capacity: float, refill: float) -> float:
-        """Uzupełnij tokeny upływem czasu (clamp do capacity)."""
-        if refill <= 0:
-            # brak uzupełniania → tylko spadek
-            return min(tokens, capacity)
-        replenished = tokens + (now - last) * refill
-        return min(replenished, capacity)
+        request = Request(scope, receive=receive)
+        path = request.url.path
+        # bypassy dla sond/metryk
+        if path in ("/metrics", "/health", "/healthz"):
+            return await self.app(scope, receive, send)
 
-    @staticmethod
-    def _retry_after(tokens: float, capacity: float, refill: float) -> int:
-        """Sekundy do uzyskania 1 tokena (co najmniej 1s)."""
-        if refill <= 0:
-            return 1
-        needed = max(0.0, 1.0 - tokens)  # ile brakuje do 1
-        seconds = needed / refill
-        return max(1, int(math.ceil(seconds)))
-
-    # ---------- ścieżka Redis ----------
-
-    async def _redis_take(self, emitter: str, capacity: float, refill: float):
-        now = time.time()
-        k_last = f"rl:{emitter}:last"
-        k_tok = f"rl:{emitter}:tok"
-
-        last_raw, tok_raw = await self.redis.mget(k_last, k_tok)
-        last = float(last_raw) if last_raw else now
-        tokens = float(tok_raw) if tok_raw else float(capacity)
-
-        # uzupełnij
-        tokens = self._calc_next(tokens, last, now, capacity, refill)
-
-        if tokens < 1.0:
-            # zapisz stan i odmów
-            await self.redis.set(k_last, now, ex=3600)
-            await self.redis.set(k_tok, tokens, ex=3600)
-            return False, int(tokens), self._retry_after(tokens, capacity, refill)
-
-        # zużyj 1 token i zapisz
-        tokens -= 1.0
-        await self.redis.set(k_last, now, ex=3600)
-        await self.redis.set(k_tok, tokens, ex=3600)
-        return True, int(tokens), 0
-
-    # ---------- ścieżka lokalna ----------
-
-    def _local_take(self, emitter: str, capacity: float, refill: float):
-        now = time.time()
-        tokens, last = self.local.get(emitter, (float(capacity), now))
-
-        tokens = self._calc_next(tokens, last, now, capacity, refill)
-
-        if tokens < 1.0:
-            self.local[emitter] = (tokens, now)
-            return False, int(tokens), self._retry_after(tokens, capacity, refill)
-
-        tokens -= 1.0
-        self.local[emitter] = (tokens, now)
-        return True, int(tokens), 0
-
-    # ---------- middleware ----------
-
-    async def dispatch(self, request, call_next):
-        # wyjątki z limitu
-        if request.url.path in ALLOW_PATHS:
-            return await call_next(request)
-
+        # z nagłówka, z request.state (HMAC), albo "unknown"
         emitter = (
-            request.headers.get("x-emitter")
-            or request.headers.get("X-Emitter")
+            getattr(request.state, "emitter", None)
+            or (request.headers.get("x-emitter") or "").strip()
             or "unknown"
         )
 
+        # parametry kubełka dla emitera
         cfg = self.per_emitter.get(emitter, {})
-        capacity = float(cfg.get("capacity", self.default_capacity))
-        refill = float(cfg.get("refill_per_sec", self.default_refill))
+        cap = int(cfg.get("capacity", self.default_capacity))
+        ref = int(cfg.get("refill_per_sec", self.default_refill))
 
+        # klucz limitu
+        key = f"rl:emitter:{emitter}:{cap}:{ref}"
+
+        allowed = True
+        # Redisowa wersja (prosta: GET+SETEX i lokalna arytmetyka — OK na testy/dev)
         if self.redis:
-            ok, remaining, retry_after = await self._redis_take(emitter, capacity, refill)
+            # używamy 1-tokenowego okna w 1/ref sec jako uproszczenie
+            ttl = max(1, 1)
+            try:
+                v = await self.redis.get(key)  # bytes or None
+                tokens = float(v.decode()) if v else float(cap)
+                # bardzo uproszczony refill (co żądanie), wystarczający na sanity dev
+                tokens = min(cap, tokens + ref * 0.1)  # 0.1s tick
+                if tokens >= 1.0:
+                    tokens -= 1.0
+                    allowed = True
+                else:
+                    allowed = False
+                await self.redis.setex(key, ttl, str(tokens))
+            except Exception:
+                # w razie problemów z redisem — nie dławić ruchu
+                allowed = True
         else:
-            ok, remaining, retry_after = self._local_take(emitter, capacity, refill)
+            b = self._mem.get(key)
+            if not b:
+                b = self._mem.setdefault(key, _Bucket(cap, ref))
+            allowed = b.allow()
 
-        # standardowe nagłówki ratelimit (proste)
-        limit_headers = {
-            "X-RateLimit-Limit": str(int(capacity)),
-            "X-RateLimit-Remaining": str(max(0, remaining)),
+        # nagłówki informacyjne
+        headers = {
+            "X-RateLimit-Limit": str(cap),
+            # heurystyka ile zostało (tylko in-memory daje sensowną liczbę)
+            "X-RateLimit-Remaining": "1" if allowed else "0",
         }
 
-        if not ok:
-            hdrs = dict(limit_headers)
-            if retry_after > 0:
-                hdrs["Retry-After"] = str(retry_after)
-            return JSONResponse({"error": "rate limit exceeded"}, status_code=429, headers=hdrs)
+        if not allowed:
+            resp = JSONResponse(
+                {"error": "rate limit exceeded", "emitter": emitter},
+                status_code=429,
+                headers=headers,
+            )
+            return await resp(scope, receive, send)
 
-        # przepuść dalej i dołóż nagłówki do odpowiedzi
-        resp = await call_next(request)
-        for k, v in limit_headers.items():
-            resp.headers[k] = v
-        return resp
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                raw = list(message.get("headers") or [])
+                for k, v in headers.items():
+                    raw.append((k.encode("latin-1"), v.encode("latin-1")))
+                message["headers"] = raw
+            await send(message)
+
+        return await self.app(scope, receive, send_with_headers)

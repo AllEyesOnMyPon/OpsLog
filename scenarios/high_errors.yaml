@@ -2,20 +2,20 @@ name: high_errors
 duration_sec: 20
 tick_sec: 1.0
 emitters:
-  - name: emitter_json
+  - name: json
     eps: 30
     args:
-      partial_ratio: 0.6   # dużo braków ts/level
+      partial_ratio: 0.6
       seed: 3001
 
-  - name: emitter_noise
+  - name: noise
     eps: 40
     args:
-      chaos: 0.8           # dużo dziwnych typów i braków
+      chaos: 0.8
       seed: 3002
 
-  - name: emitter_csv
+  - name: csv
     eps: 15
     args:
-      partial_ratio: 0.7   # celowo dużo uboższych wierszy
+      partial_ratio: 0.7
       seed: 3003

@@ -3,9 +3,7 @@ duration_sec: 40
 tick_sec: 1.0
 
 emitters:
-  - name: emitter_json
-    # alternatywnie plugin:
-    # script: custom_emitters/my_special.py
+  - name: json
     eps: 20
     args:
       partial_ratio: 0.2
@@ -17,7 +15,7 @@ emitters:
       ramp_down_sec: 5
       jitter_pct: 0.10
 
-  - name: emitter_minimal
+  - name: minimal
     eps: 5
     schedule:
       start_after_sec: 10

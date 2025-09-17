@@ -1,171 +1,119 @@
-# services/authgw/downstream.py
 from __future__ import annotations
 
 import asyncio
-import logging
 import time
-from dataclasses import dataclass
-from typing import Optional, Dict, Any, Tuple
+from typing import Any
 
 import httpx
 
-logger = logging.getLogger("authgw.downstream")
 
-
-@dataclass
 class Breaker:
-    """
-    Prosty circuit breaker oparty o proporcję błędów w 'oknie' licznikowym.
-    Stany:
-      - closed     : normalna praca
-      - open       : odcinamy ruch do czasu 'half_open_after_sec'
-      - half_open  : przepuszczamy pojedyncze próby; sukces zamyka obwód
+    def __init__(
+        self, failure_threshold: float = 0.2, window_sec: int = 30, half_open_after_sec: int = 20
+    ):
+        """
+        failure_threshold: odsetek błędów (0.0–1.0), po którym breaker przechodzi w OPEN.
+        window_sec:        (na przyszłość) szerokość okna; na razie liczymy prosto.
+        half_open_after_sec: czas „ochłonięcia” zanim spróbujemy ponownie.
+        """
+        self.failure_threshold = failure_threshold
+        self.window_sec = window_sec
+        self.half_open_after_sec = half_open_after_sec
+        self._fail_count = 0
+        self._total_count = 0
+        self._open_until = 0.0
 
-    Polityka:
-      - przejście do open, gdy ratio(fails/total) >= failure_threshold
-      - w half_open: sukces -> closed (zeruje okno), błąd -> open (reset timera)
-      - lekkie „przycinanie” okna przy bardzo dużych licznikach
-    """
-    failure_threshold: float = 0.20     # np. 0.2 => 20%
-    window_sec: int = 30                # (zostawione na przyszłość; teraz licznikowe okno)
-    half_open_after_sec: int = 20
+    def record(self, ok: bool) -> None:
+        self._total_count += 1
+        if not ok:
+            self._fail_count += 1
 
-    _fails: int = 0
-    _total: int = 0
-    _opened_at: Optional[float] = None
+    def should_open(self) -> bool:
+        if self._total_count == 0:
+            return False
+        ratio = self._fail_count / max(1, self._total_count)
+        return ratio >= self.failure_threshold
 
-    def _state(self, now: float) -> str:
-        if self._opened_at is None:
-            return "closed"
-        if (now - self._opened_at) >= self.half_open_after_sec:
-            return "half_open"
-        return "open"
+    def state_allows(self) -> bool:
+        return time.time() >= self._open_until
 
-    def allow_request(self) -> bool:
-        now = time.time()
-        state = self._state(now)
-        allowed = state != "open"
-        if not allowed:
-            logger.debug("breaker=OPEN deny request (will be half-open in %.1fs)",
-                         max(0.0, self.half_open_after_sec - (now - (self._opened_at or now))))
-        return allowed
-
-    def _shrink_window(self) -> None:
-        # proste „przycinanie” okna, by liczby nie rosły w nieskończoność
-        if self._total >= 1000:
-            ratio = self._fails / max(1, self._total)
-            self._fails = int(ratio * 100)
-            self._total = 100
-
-    def record_success(self) -> None:
-        now = time.time()
-        state = self._state(now)
-        self._total += 1
-
-        if state == "half_open":
-            # sukces w half-open zamyka obwód i zeruje okno
-            self._opened_at = None
-            self._fails = 0
-            self._total = 0
-            logger.info("breaker transition: HALF_OPEN -> CLOSED (success)")
-            return
-
-        self._shrink_window()
-
-    def record_failure(self) -> None:
-        now = time.time()
-        state = self._state(now)
-        self._total += 1
-        self._fails += 1
-
-        if state == "closed":
-            ratio = self._fails / max(1, self._total)
-            if ratio >= self.failure_threshold:
-                self._opened_at = now
-                logger.warning("breaker transition: CLOSED -> OPEN (ratio=%.3f >= %.3f)",
-                               ratio, self.failure_threshold)
-        elif state == "half_open":
-            # błąd w half-open utrzymuje open (reset timera)
-            self._opened_at = now
-            logger.warning("breaker: HALF_OPEN -> OPEN (failure)")
-
-        self._shrink_window()
+    def open(self) -> None:
+        self._open_until = time.time() + self.half_open_after_sec
+        self._fail_count = 0
+        self._total_count = 0
 
 
 async def post_with_retry(
     url: str,
-    json_payload: Any,
-    timeout_ms: Tuple[int, int] = (2000, 5000),  # (connect_ms, read_ms)
+    *,
+    # Użyj jednego z dwóch:
+    json_payload: Any | None = None,
+    content: bytes | None = None,
+    # Timeouty (connect_ms, read_ms)
+    timeout_ms: tuple[int, int] = (2000, 5000),
+    # Retry
     attempts: int = 3,
     base_delay_ms: int = 100,
     max_delay_ms: int = 1500,
-    breaker: Optional[Breaker] = None,
-    headers: Optional[Dict[str, str]] = None,
+    breaker: Breaker | None = None,
+    headers: dict[str, str] | None = None,
 ) -> httpx.Response:
     """
-    POST z retry + (opcjonalnie) circuit breakerem.
-
-    - Próby ponawiamy dla błędów sieciowych i HTTP 5xx.
-    - HTTP 4xx zwracamy bez retry (to raczej błąd klienta).
-    - Przy stanie breaker=OPEN rzucamy RuntimeError("circuit_open").
-
-    Zwraca: httpx.Response (jeśli uda się wysłać) lub
-    rzuca RuntimeError po wyczerpaniu prób.
+    Wysyłka z retry i prostym CB. Obsługuje JSON (json_payload) lub surowe body (content).
+    - 5xx i błędy sieci → retry
+    - 4xx → bez retry (zwracamy odpowiedź)
+    - breaker.state_allows() == False → RuntimeError("circuit_open")
     """
-    if not url:
-        raise RuntimeError("forward_url_missing")
+    if json_payload is not None and content is not None:
+        raise ValueError("Provide either json_payload or content, not both.")
 
-    attempts = max(1, int(attempts))
-    connect_ms, read_ms = timeout_ms
+    if breaker and not breaker.state_allows():
+        raise RuntimeError("circuit_open")
 
+    connect, read = timeout_ms
     timeout = httpx.Timeout(
-        connect=connect_ms / 1000.0,
-        read=read_ms / 1000.0,
-        write=read_ms / 1000.0,
-        pool=connect_ms / 1000.0,
+        connect=connect / 1000.0, read=read / 1000.0, write=read / 1000.0, pool=connect / 1000.0
     )
 
-    last_exc: Optional[Exception] = None
+    last_exc: Exception | None = None
+    delay = base_delay_ms / 1000.0
+    max_delay = max_delay_ms / 1000.0
 
-    for attempt in range(1, attempts + 1):
-        if breaker and not breaker.allow_request():
-            raise RuntimeError("circuit_open")
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        for attempt in range(1, max(1, attempts) + 1):
+            try:
+                if content is not None:
+                    resp = await client.post(url, content=content, headers=headers)
+                else:
+                    resp = await client.post(url, json=json_payload, headers=headers)
 
-        try:
-            logger.debug("downstream POST attempt=%d url=%s", attempt, url)
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.post(url, json=json_payload, headers=headers)
+                # 4xx → bez retry
+                if 400 <= resp.status_code < 500:
+                    if breaker:
+                        breaker.record(True)  # to nie błąd transportu
+                    return resp
 
-            status = resp.status_code
-            # 5xx traktujemy jako „awarię” downstream → retry/CB
-            if 500 <= status < 600:
-                logger.warning("downstream 5xx (status=%d) on attempt=%d", status, attempt)
+                # 5xx → można retry
+                ok = resp.status_code < 500
                 if breaker:
-                    breaker.record_failure()
-                last_exc = RuntimeError(f"http_{status}")
-            else:
+                    breaker.record(ok)
+                    if breaker.should_open():
+                        breaker.open()
+
+                if ok:
+                    return resp
+
+            except Exception as e:
+                last_exc = e
                 if breaker:
-                    breaker.record_success()
-                return resp
+                    breaker.record(False)
+                    if breaker.should_open():
+                        breaker.open()
 
-        except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError) as e:
-            logger.warning("downstream network error on attempt=%d: %s", attempt, e.__class__.__name__)
-            last_exc = e
-            if breaker:
-                breaker.record_failure()
-        except Exception as e:
-            logger.warning("downstream unexpected error on attempt=%d: %s", attempt, e)
-            last_exc = e
-            if breaker:
-                breaker.record_failure()
+            # tu wchodzimy jeśli wyjątek lub 5xx
+            if attempt >= attempts:
+                break
+            await asyncio.sleep(min(delay, max_delay))
+            delay = min(delay * 2, max_delay)
 
-        # jeżeli to nie była ostatnia próba — czekamy z backoffem
-        if attempt < attempts:
-            delay = min(base_delay_ms * (2 ** (attempt - 1)), max_delay_ms) / 1000.0
-            logger.debug("retry sleeping %.3fs (attempt %d/%d)", delay, attempt, attempts)
-            await asyncio.sleep(delay)
-
-    # po wszystkich próbach – zgłoś błąd z ostatnim wyjątkiem
-    if last_exc is None:
-        raise RuntimeError("downstream_error: unknown")
-    raise RuntimeError(f"downstream_error: {type(last_exc).__name__}: {last_exc}")
+    raise RuntimeError(f"downstream_error: {last_exc!r}" if last_exc else "downstream_error")

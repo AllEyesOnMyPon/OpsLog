@@ -1,0 +1,206 @@
+groups:
+  - name: logops-availability
+    rules:
+      - alert: LogOpsIngestDown
+        expr: up{job="logops-ingest"} != 1
+        for: 2m
+        labels: {severity: critical, service: ingestgw}
+        annotations:
+          summary: "IngestGW target down"
+          description: "Prometheus nie może zeskrapować IngestGW /metrics przez 2m."
+
+      - alert: LogOpsAuthGWDown
+        expr: up{job="logops-authgw"} != 1
+        for: 2m
+        labels: {severity: critical, service: authgw}
+        annotations:
+          summary: "AuthGW target down"
+          description: "AuthGW /metrics niedostępne przez 2m."
+
+      - alert: LogOpsCoreDown
+        expr: up{job="logops-core"} != 1
+        for: 2m
+        labels: {severity: warning, service: core}
+        annotations:
+          summary: "Core target down"
+          description: "Core /metrics niedostępne przez 2m."
+
+      - alert: LogOpsNoIngestTraffic
+        expr: absent(rate(logops_ingested_total[5m]))
+        for: 5m
+        labels: {severity: warning, service: ingestgw}
+        annotations:
+          summary: "Brak ruchu na IngestGW"
+          description: "W ciągu 5m nie obserwujemy próbek logops_ingested_total."
+
+  - name: logops-security
+    rules:
+      # 429 (rate limit) — per emitter
+      - alert: LogOpsAuthGW429High
+        expr: sum by (emitter) (rate(logops_rejected_total{reason="429"}[5m])) > 0.5
+        for: 3m
+        labels:
+          severity: warning
+          service: authgw
+          scope: per-emitter
+        annotations:
+          summary: "AuthGW 429 (rate limit) wysoki dla {{ $labels.emitter }}"
+          description: "Średnio >0.5/s 429 w ciągu 5m dla emittera {{ $labels.emitter }}."
+
+      # 429 — globalnie
+      - alert: LogOpsAuthGW429HighGlobal
+        expr: sum without (emitter) (rate(logops_rejected_total{reason="429"}[5m])) > 1
+        for: 3m
+        labels:
+          severity: warning
+          service: authgw
+          scope: global
+        annotations:
+          summary: "AuthGW 429 (rate limit) wysoki globalnie"
+          description: "Średnio >1/s 429 w ciągu 5m (agregat bez wymiaru emitter)."
+
+      # 413 (backpressure/payload too large) — per emitter
+      - alert: LogOpsAuthGW413High
+        expr: sum by (emitter) (rate(logops_rejected_total{reason="413"}[5m])) > 0.2
+        for: 3m
+        labels:
+          severity: warning
+          service: authgw
+          scope: per-emitter
+        annotations:
+          summary: "AuthGW 413 (payload/backpressure) dla {{ $labels.emitter }}"
+          description: "Średnio >0.2/s 413 w ciągu 5m dla emittera {{ $labels.emitter }}."
+
+      # 413 — globalnie
+      - alert: LogOpsAuthGW413HighGlobal
+        expr: sum without (emitter) (rate(logops_rejected_total{reason="413"}[5m])) > 0.5
+        for: 3m
+        labels:
+          severity: warning
+          service: authgw
+          scope: global
+        annotations:
+          summary: "AuthGW 413 (payload/backpressure) wysoki globalnie"
+          description: "Średnio >0.5/s 413 w ciągu 5m (agregat bez wymiaru emitter)."
+
+  - name: logops-quality
+    rules:
+      # Parse error rate — per emitter (odsetek względem accepted)
+      - alert: LogOpsParseErrorRateHigh
+        expr: |
+          (
+            sum by (emitter) (rate(logops_parse_errors_total[5m]))
+          )
+          /
+          clamp_min(
+            (
+              sum by (emitter) (rate(logops_parse_errors_total[5m]))
+              + sum by (emitter) (rate(logops_accepted_total[5m]))
+            ), 1e-6
+          ) > 0.02
+        for: 3m
+        labels:
+          severity: warning
+          service: ingestgw
+          scope: per-emitter
+        annotations:
+          summary: "Wysoki parse error rate dla {{ $labels.emitter }}"
+          description: "Parse error rate >2% przez 3m."
+
+      # Parse error rate — globalnie
+      - alert: LogOpsParseErrorRateHighGlobal
+        expr: |
+          (
+            sum without (emitter) (rate(logops_parse_errors_total[5m]))
+          )
+          /
+          clamp_min(
+            (
+              sum without (emitter) (rate(logops_parse_errors_total[5m]))
+              + sum without (emitter) (rate(logops_accepted_total[5m]))
+            ), 1e-6
+          ) > 0.05
+        for: 3m
+        labels:
+          severity: critical
+          service: ingestgw
+          scope: global
+        annotations:
+          summary: "Globalnie wysoki parse error rate"
+          description: "Parse error rate >5% przez 3m (agregat bez wymiaru emitter)."
+
+      - alert: LogOpsMissingTSSpike
+        expr: sum(increase(logops_missing_ts_total[5m])) > 50
+        for: 10m
+        labels: {severity: warning, service: ingestgw}
+        annotations:
+          summary: "Wzrost brakujących timestampów (5m)"
+          description: "Ponad 50 rekordów bez ts w 5m."
+
+      - alert: LogOpsMissingLevelSpike
+        expr: sum(increase(logops_missing_level_total[5m])) > 50
+        for: 10m
+        labels: {severity: info, service: ingestgw}
+        annotations:
+          summary: "Wzrost brakujących level (5m)"
+          description: "Ponad 50 rekordów bez pola level w 5m."
+
+  - name: logops-performance
+    rules:
+      # p95 ingest batch latency — per emitter
+      - alert: LogOpsIngestP95LatencyHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, emitter) (rate(logops_batch_latency_seconds_bucket[5m]))
+          ) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          service: ingestgw
+          scope: per-emitter
+        annotations:
+          summary: "p95 batch latency > 500ms dla {{ $labels.emitter }}"
+          description: "p95 > 0.5s przez 5m (ingest)."
+
+      # p95 ingest batch latency — globalnie (warning)
+      - alert: LogOpsIngestP95LatencyHighGlobal
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(logops_batch_latency_seconds_bucket[5m]))
+          ) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          service: ingestgw
+          scope: global
+        annotations:
+          summary: "Globalnie p95 batch latency > 500ms"
+          description: "p95 > 0.5s przez 5m (agregat globalny)."
+
+      # p95 ingest batch latency — globalnie (critical)
+      - alert: LogOpsIngestP95LatencyCriticalGlobal
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(logops_batch_latency_seconds_bucket[5m]))
+          ) > 1
+        for: 5m
+        labels:
+          severity: critical
+          service: ingestgw
+          scope: global
+        annotations:
+          summary: "Globalnie p95 batch latency > 1s"
+          description: "p95 > 1s przez 5m (agregat globalny)."
+
+  - name: prometheus-health
+    rules:
+      - alert: PrometheusTargetScrapeFailures
+        expr: increase(prometheus_target_scrapes_sample_scrapes_failed_total[5m]) > 0
+        for: 10m
+        labels: {severity: warning, service: prometheus}
+        annotations:
+          summary: "Scrape failures rosną (5m)"
+          description: "Prometheus notuje nieudane scrapowania w ostatnich 5 minutach."

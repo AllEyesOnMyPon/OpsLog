@@ -1,122 +1,100 @@
-# Roadmap — LogOps
+# Roadmap — LogOps (po v0.4)
 
-Krótka, żywa roadmapa rozwoju LogOps. Cele są zgrupowane na krótkie / średnie / długie terminy.  
+Krótka, żywa roadmapa. Elementy pogrupowane per wersję i horyzont.
 `[ ]` → `[x]`
 
 ---
 
-## Baseline (zrobione)
+## 🕰️ Historia wersji
 
-- [x] Emitery: CSV, JSON, Minimal, Noise, Syslog — `/emitters/*`
-- [x] Ingest Gateway (FastAPI): `/v1/logs`, `/metrics`, `/healthz` — `services/ingest_gateway/gateway.py`
-- [x] Normalizacja + PII (mask/enc), zapis NDJSON (opcjonalny)
-- [x] Housekeeping: retention + archiwizacja zip — `tools/housekeeping.py`
-- [x] Observability stack (Loki, Promtail, Prometheus, Grafana)
-- [x] Alerty Prometheusa (10 reguł) — `infra/docker/prometheus/alert_rules.yml`
-- [x] Dokumentacja modułowa + C4 (C1–C3) — `docs/*`, `docs/architecture/workspace.dsl` + `docs/architecture/c1.png,c2.png,c3.png`
-
----
-
-## Short term (najbliższe tygodnie)
-
-**Emitery i scenariusze**
-- [x] Dodać katalog `scenarios/` z profilami ruchu (`default.yaml`, `burst.yaml`, `quiet-then-spike.yaml`, `high-errors.yaml`)
-- [x] (Opcjonalnie) dopisać do emiterów nagłówek `X-Emitter` zawsze (jeśli gdzieś brakuje), by `emitter=` był w Lokim przewidywalny
-
-**Orchestrator / CLI**
-- [x] `tools/run_scenario.py`: CLI, które odpala emitery wg scenariusza (czas trwania, EPS, rozkład leveli)
-- [x] Wypisywać krótkie statystyki na koniec (ile wysłano per emitter/level)
-- [x] Dodać targety do `Makefile`: `scenario:run`, `emit:*` (opcjonalnie)
-- [x] `--dry-run` i `--debug` (verbose log, symulacja bez wysyłki)
-- [x] Obsługa `--log-file` (zapis scenariusza + statów do pliku)
-- [x] Rozszerzenie YAML scenariusza: harmonogram (okna czasowe, ramp-up/ramp-down, jitter)
-- [x] Architektura pluginów dla emiterów (łatwe dodawanie nowych typów)
-
-**Gateway / niezawodność**
-- [x] Walidacja wejścia (proste `pydantic` modele; 400/422 dla złych danych)
-- [x] Drobne metryki dodatkowe (np. `logops_parse_errors_total`)
-- [x] Backpressure: limit batcha (HTTP 413 przy zbyt dużych), metryka `logops_rejected_total`
-- [x] Autoryzacja demo (`X-Api-Key` lub HMAC podpis)
-- [x] Rate limiting per `X-Emitter` (np. token bucket w pamięci)
-
-**Observability i alerty**
-- [x] Dashboard Grafany: panele pod orchestrację/scenariusze (EPS, udział poziomów, missing ts/level)
-- [x] Dopracować alerty progowe po testach scenariuszy (progi, `for`, opisy)
-- [ ] Integracja z Alertmanager (Slack/email, label `service=logops`)
-- [ ] Definicja SLO: `% batchy <500 ms` (histogram + panel PromQL)
-
-**Dokumentacja**
-- [x] Uzupełnić `docs/services/orchestrator.md` (jeśli ruszy CLI)
-- [x] Dodać `.env.example` z flagami: `LOGOPS_SINK_FILE`, `LOGOPS_ENCRYPT_PII`, `LOGOPS_RETENTION_DAYS`, `LOGOPS_ARCHIVE_MODE`, `LOGOPS_HOUSEKEEP_*`
-- [x] Uporządkować nazewnictwo README emiterów (docelowo `docs/emitters/emitter_xxx.md` lub `docs/emitters/emitter_xxx/README.md`)
+- **v0.1 — Sterylny Ingest**
+  - [x] Ingest Gateway (FastAPI) z prostym przyjęciem logów (bez pełnego tagowania)
+- **v0.2 — Housekeeping + Observability**
+  - [x] Retencja + archiwizacja NDJSON
+  - [x] Stack: Loki/Promtail, Prometheus, Grafana
+- **v0.3 — CLI-first orchestration + validation + dashboard & alerts**
+  - [x] `tools/run_scenario.py` (CLI), scenariusze YAML
+  - [x] Walidacja wejścia, pierwsze dashboardy i alerty
+- **v0.4 — Auth + run_scenario + SLO/p95**
+  - [x] Auth Gateway (HMAC/API key, RL, backpressure, forward)
+  - [x] Rozszerzone metryki i reguły (SLO + p95)
+  - [x] Narzędzia HMAC i scenariusze (run_scenario)
 
 ---
 
-## 🚀 Medium term (1–2 mies.)
+## 🎯 v0.5 — Operacyjność E2E + pierwszy krok w skalowanie
+> Cel: **single pane of glass** w Grafanie + **control-plane do uruchamiania ruchu**, test E2E z alertem, oraz **pierwszy kontakt z K8s/CI/CD/GUI**.
 
-**Orchestrator (lekki serwis + GUI)**
-- [ ] `services/orchestrator/` (FastAPI + HTMX/Alpine): endpointy `start/stop/status`, proste GUI
-- [ ] Sterowanie EPS: throttling (token bucket), scenariusze z YAML
-- [ ] Metryki orchestratora: `logops_orch_emitted_total`, `logops_orch_running`, `logops_orch_errors_total`
-- [ ] WebSocket do live-podglądu (liczniki) — opcjonalnie
+### CORE (~70%)
+- **Orchestrator (control-plane API)**
+  - [x] `services/orchestrator/` (FastAPI): `POST /scenario/start|stop`, `GET /scenario/list`
+  - [x] Generowanie `scenario_id` + metryki: `logops_orch_running`, `logops_orch_emitted_total`, `logops_orch_errors_total`
+  - [x] Emitery: honorują profil z orchestratora, **tagują logi `scenario_id`**
+- **Dashboard “LogOps: E2E” (provisioning jako kod)**
+  - [x] Datasources (Prometheus, Loki) + `dashboards/` (JSON)
+  - [x] Panele: **Error rate (SLO)**, **p95 ingest latency**, **AuthGW 429/413**, **parse_errors**, **Live Logs** po `scenario_id`
+  - [x] Zmienne: `env`, `service`, `scenario_id`; panel „Alert list” (Unified Alerting)
+- **Alert rules — pokrycie wszystkich emiterów**
+  - [x] Reguły w PromQL z wymiarem `emitter` (i agregat bez `emitter`)
+  - [x] Progi i `for:` urealnione po testach scenariuszy (happy/burst/rl/bp)
+- **Test E2E + report**
+  - [x] `make e2e`: start scenariuszy → weryfikacja logów w Lokim i stanu alertów (AM/Grafana)
+  - [x] `make report`: raport `.md` z Prometheus/Loki API (headless)
+- **Higiena repo / bezpieczeństwo**
+  - [x] `.env.example` + `.env.local` w `.gitignore`
+  - [x] Pre-commit (ruff/black, git-secrets) — brak sekretów w diffach
+- **Dokumentacja operacyjna**
+  - [x] Quickstart (90s) — `make demo`
+  - [x] Playbook: „Jak uruchomić scenariusz i zobaczyć alert”
+  - [x] Runbook: „Co zrobić, gdy p95/SLO się odpali”
 
-**Przechowywanie / integracje**
-- [ ] Sink do S3/GCS (rotacja dzienna, archiwizacja)
-- [ ] Narzędzie offline do odszyfrowywania PII dla audytu (tylko lokalnie)
-
-**Konteneryzacja i Compose**
-- [ ] `Dockerfile` dla gatewaya
-- [ ] Nowy `docker-compose` spinający **gateway + observability** (osobny od `observability`)
-
-**Testy i jakość**
-- [ ] Testy jednostkowe/integracyjne (pytest + httpx)
-- [ ] Test E2E: uruchom mini-scenario → sprawdź query do Lokiego i metryki Prometheusa (asercje)
-- [ ] Linting i format: `ruff/black/mypy/isort` + pre-commit hooks
-- [ ] CI/CD (GitHub Actions): lint + testy + budowa obrazów Docker (opcjonalnie publikacja do GHCR)
-
-**Housekeeping / retencja**
-- [ ] Dokumentacja edge-case: wpływ retencji NDJSON vs. retencja Loki (48h)
-- [ ] (Opcjonalnie) Rotacja plików NDJSON co `HH` zamiast dobowo — jeśli pojawią się duże wolumeny
-
----
-
-## 🌐 Long term (3+ mies.)
-
-**Źródła i sinki**
-- [ ] Emiter „access-log” (Nginx/Apache), emiter „kafka” (symulacja konsumenta)
-- [ ] Alternatywne sinki: Azure Blob / inne chmury
-
-**Kubernetes**
-- [ ] Helm chart dla wdrożeń w Kubernetes
-- [ ] Manifests/kustomize dla pełnego stacku (gateway + observability + orchestrator)
-- [ ] Kind/Minikube jako środowisko lokalne do demonstracji
-
-**Multi-tenant ingest**
-- [ ] Obsługa `tenant_id` (etykieta, separacja scenariuszy / filtrowanie w Lokim)
-- [ ] (Opcjonalnie) limitowanie per tenant (token bucket na wejściu gatewaya)
-
-**Analityka**
-- [ ] Wykrywanie anomalii na metrykach ingestu (regresje, bursty)
-- [ ] Klasyfikacja logów / clustering — proof-of-concept (off-line, raport do Grafany)
+### EXPLORATION (~30%)
+- **K8s (spike)**
+  - [ ] Uruchom **Auth+Ingest** w Kind/Minikube jako `Deployment + Service`
+  - [ ] ConfigMap/Secret na env/secrety; **bez** Helm — tylko „działa w K8s”
+- **CI/CD (spike)**
+  - [ ] GitHub Actions: lint (ruff/black) + pytest (services/tools)
+  - [ ] Badge w README
+- **GUI (spike)**
+  - [ ] Prosta strona (FastAPI + HTMX) w orchestratorze: **przycisk „Start scenario (burst)”**
+  - [ ] Wyświetl `scenario_id` i link do Explore (Grafana) z presetem filtra
 
 ---
 
-## Odnośniki
-
-- Przegląd: `docs/overview.md`  
-- Quickstart: `docs/quickstart.md`  
-- Observability: `docs/observability.md`  
-- Infrastruktura (Docker): `docs/infra.md`  
-- Ingest Gateway (API): `docs/services/ingest_gateway.md`  
-- Emitery: `docs/services/emitters.md` + `docs/emitters/*`  
-- Housekeeping: `docs/tools/housekeeping.md`  
-- Architektura (C4): `docs/architecture.md` + `docs/architecture/workspace.dsl`
+## 🔧 Zmiany w alertach (multi-emitter & scenario-aware)
+- [ ] Zmień liczniki na **wymiarowane po `emitter`**:
+  - `sum by (emitter)(rate(logops_errors_total[5m]))`
+  - `sum without (emitter)(...)` dla agregatów globalnych
+- [ ] Dodaj wymiar **`scenario_id`** do części zapytań (diagnoza demo)
+- [ ] Osobne reguły na **AuthGW 429/413**, **Ingest parse_errors**, **Latency p95**
 
 ---
 
-## Zasady aktualizacji roadmapy
+## 🛣️ v0.6 — „Pierwsze skalowanie”
+- [ ] **Horizontal scaling**: 2 repliki Ingest (lokalnie/docker-compose lub K8s)
+- [ ] **CI/CD+containers**: build/push obrazów do GHCR, deploy do Kind (kubectl apply)
+- [ ] **GUI+control**: panel orchestratora z wyborem profilu, duration, RPS; log działań
+- [ ] **Alerting jako code**: pełne provisioning reguł i kontakt pointów (Slack/webhook)
 
-- Krótkie PR-y, każda pozycja z listy → osobny commit/PR z prefiksem `feat:` / `chore:` / `docs:`.  
-- Po wdrożeniu: oznacz `[x]`, dopisz link do PR/commita i ewentualnie datę.  
-- Co sprint/przegląd: przesuń elementy między sekcjami (short → medium → done).
+## 🛰️ v0.7 — „Twardsza platforma”
+- [ ] Helm Chart (Ingest/Auth/Orch) + values dla lokal/ci
+- [ ] Multi-tenant (`tenant_id` label), limity per tenant
+- [ ] Sink S3/GCS (rotacja dzienna) + narzędzie offline do odszyfr. PII
+- [ ] Testy E2E w CI (uruchom stack, odpal scenario, asercje Prom/Loki)
 
+---
+
+## 📐 Definition of Done (v0.5)
+- [ ] `make demo` podnosi stack i uruchamia „happy path”; dashboard pokazuje ruch
+- [ ] `make e2e` wyzwala **co najmniej 1 alert** i zapisuje `artefacts/run/.../report.md`
+- [ ] Grafana provisioning, alert rules i dashboardy są w repo jako kod
+- [ ] Reguły obejmują **wszystkie emitery** (wymiar `emitter`) + agregaty
+- [ ] Orchestrator nadaje `scenario_id` i eksponuje metryki
+- [ ] Brak sekretów w repo (pre-commit przechodzi)
+
+---
+
+## 📝 Zasady aktualizacji roadmapy
+- Short (aktywny milestone) ≤ **7 pozycji** — jeśli coś dochodzi, coś spada do v0.6
+- Każdy release = **2–4 zadania core + 1–2 zadania exploration**
+- Każdy PR: prefiks `feat:` / `chore:` / `docs:` + link w roadmapzie po domknięciu

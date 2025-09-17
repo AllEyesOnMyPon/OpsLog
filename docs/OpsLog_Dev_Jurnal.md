@@ -2,7 +2,7 @@
 
 ---
 
-## Day 0 
+## Day 0
 
 ---
 
@@ -432,7 +432,7 @@ Wymagane w gateway: wsparcie `text/plain` + regex parser.
 
 **Plik**: `emitters\emitter_noise\emit_noise.py`
 
-**Test**: 
+**Test**:
 ```powershell
 .\.venv\Scripts\python.exe .\emitters\emitter_noise\emit_noise.py --chaos 0.5 -n 20
 ```
@@ -701,7 +701,7 @@ LOGOPS_HOUSEKEEP_INTERVAL_SEC=0   # 0 = tylko na starcie; np. 3600 = co godzinę
 
 ## Day 3
 
-### Obserwowalność w środowisku Docker 
+### Obserwowalność w środowisku Docker
 
 **Cel:** Zbudowanie podstawowego stacku monitoringowo-logowego w oparciu o cztery komponenty:
 
@@ -774,11 +774,11 @@ umożliwione **reloady** configu via `irm -Method Post http://localhost:9090/-/r
   Rozwiązanie: usunięcie duplikatu, spójne `.yml`.
 
 - **Loki wyrzucał błędy `failed to load chunk … no such file` przy starych danych.**
-  
+
   Rozwiązanie: czyszczenie wolumenu i ponowny start.
 
 - **Brak świeżych logów w Grafanie – różnica czasu (PL vs UTC).**
-  
+
   Rozwiązanie: timestampy w NDJSON są w UTC, Grafana też → problem leżał w offsetach, naprawione po prawidłowym ustawieniu `positions` i s`tart_position`.
 
 - **„No volume available” w panelach – Promtail nie miał wolumenu na offsety.**
@@ -982,7 +982,7 @@ To daje nam **pełne minimum observability**: wykryjemy brak ruchu, anomalie ruc
 
   - `httpx` → testy API.
 
-**Cel:** 
+**Cel:**
 - Oddzielić to, co **niezbędne do działania** usługi, od narzędzi developerskich.
 
 - Dzięki temu kontenery produkcyjne będą lżejsze i prostsze w utrzymaniu, a jednocześnie mamy pełne wsparcie narzędzi w środowisku developerskim.
@@ -995,29 +995,24 @@ To daje nam **pełne minimum observability**: wykryjemy brak ruchu, anomalie ruc
 
 Przygotowane do automatyzacji buildów (np. Dockerfile może używać tylko `requirements.txt` z katalogu usługi).
 
-## Day 4-5 
+## Day 4-5
 
 2025/08/23-24 – Dokumentacja i Structurizr
 
-Uporządkowałem strukturę dokumentacji w projekcie **LogOps**.  
-Zasada jest prosta: główny `README.md` w root to **mapa projektu** i szybki start, a wszystkie szczegóły są rozbite na osobne pliki w `docs/`.  
+Uporządkowałem strukturę dokumentacji w projekcie **LogOps**.
+Zasada jest prosta: główny `README.md` w root to **mapa projektu** i szybki start, a wszystkie szczegóły są rozbite na osobne pliki w `docs/`.
 
-- `overview.md` → przegląd projektu, co jest in scope / out of scope  
-- `quickstart.md` → jak uruchomić środowisko krok po kroku  
-- `infra.md`, `observability.md` → szczegóły Dockera, Prometheus, Grafana, Loki, Promtail  
-- `services/` → opis Gatewaya i emiterów (każdy emiter ma własny README)  
-- `tools/housekeeping.md` → osobny opis skryptu czyszczącego archiwalne NDJSON  
-- `architecture.md` → diagramy C4 (C1, C2, C3)  
+- `overview.md` → przegląd projektu, co jest in scope / out of scope
+- `quickstart.md` → jak uruchomić środowisko krok po kroku
+- `infra.md`, `observability.md` → szczegóły Dockera, Prometheus, Grafana, Loki, Promtail
+- `services/` → opis Gatewaya i emiterów (każdy emiter ma własny README)
+- `tools/housekeeping.md` → osobny opis skryptu czyszczącego archiwalne NDJSON
+- `architecture.md` → diagramy C4 (C1, C2, C3)
 
 Dzięki temu unikam ściany tekstu – każdy moduł ma swoje miejsce i można łatwo znaleźć potrzebne info.
 
-Dodatkowo uruchomiłem **Structurizr Lite** w kontenerze Dockera.  
-Za jego pomocą zdefiniowałem model w DSL (`workspace.dsl`) i wyeksportowałem diagramy C1–C3 do PNG.  
+Dodatkowo uruchomiłem **Structurizr Lite** w kontenerze Dockera.
+Za jego pomocą zdefiniowałem model w DSL (`workspace.dsl`) i wyeksportowałem diagramy C1–C3 do PNG.
 Teraz w `architecture.md` są podlinkowane gotowe obrazki (`c1.png`, `c2.png`, `c3.png`), więc całość jest czytelna również w repo na GitHubie bez uruchamiania Structurizr.
 
 Wnioski: **docs muszą żyć równolegle z projektem nie jako uzupełnienie bo łatwo sie zgubić w miarę skalowania.**
-
-
-
-
-

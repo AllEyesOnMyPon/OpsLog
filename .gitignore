@@ -65,3 +65,7 @@ many.json
 # --- IDE configs (optional, add if used) ---
 .vscode/
 .idea/
+docs/architecture/.structurizr/
+*.lock
+docs/architecture/.structurizr/
+*.lock

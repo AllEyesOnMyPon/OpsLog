@@ -1,0 +1,20 @@
+name: chaos-auth
+duration_sec: 300
+tick_sec: 1.0
+emitters:
+- name: json
+  eps: 30
+  args:
+    api_key: demo-pub-1
+    secret: demo-priv-1
+- name: noise
+  eps: 80
+  args:
+    api_key: demo-pub-4
+    secret: demo-priv-4
+    chaos: 0.7
+- name: syslog
+  eps: 30
+  args:
+    api_key: demo-pub-5
+    secret: demo-priv-5

@@ -1,70 +1,72 @@
 # Observability (Loki + Promtail + Prometheus + Grafana)
 
-Ten dokument opisuje **aktualny** stan obserwowalności LogOps: konfiguracje komponentów, reguły alertów (w tym **SLO/p95**), templating Alertmanagera (Slack), provisioning Grafany, szybkie testy oraz scenariusze ruchu.  
-Źródła i ścieżki poniżej odpowiadają plikom z repo (sekcja „Konfiguracje – pełne fragmenty”).
+Ten dokument opisuje **aktualny** stan obserwowalności LogOps: przepływ danych, konfiguracje komponentów, reguły alertów (w tym **SLO/p95**), provisioning Grafany, szybkie testy oraz scenariusze ruchu.
+Odwołania do kodu: **AuthGW** (`services/authgw`), **IngestGW** (`services/ingest`), **Core** (`services/core`), narzędzia (`tools/*`), orkiestracja/emitery (`tools/run_scenario.py`, `emitters/*`), oraz Docker Compose (`infra/docker/docker-compose.observability.yml`).
 
 ---
 
 ## Architektura i przepływ
 
 ```
-Emitery → (opcjonalnie) AuthGW (/ingest) → IngestGW (/v1/logs) → NDJSON (data/ingest/*.ndjson)
-         ↘ (RL / HMAC / Backpressure / Retry+CB)                            ↘ Promtail → Loki → Grafana (Explore/Logs)
-                                                                            ↘ Prometheus (metryki) → Alertmanager (Slack)
+Emitery / Orchestrator → (opcjonalnie) AuthGW :8081 (/ingest)
+                     ↘ IngestGW :8080 (/v1/logs) → NDJSON (data/ingest/*.ndjson)
+                                             ↘ Core :8095 (/v1/logs)
+NDJSON → Promtail → Loki → Grafana (Explore/Logs)
+Metryki (AuthGW/Ingest/Core/Promtail/Loki/Prometheus) → Prometheus → Alertmanager (Slack)
 ```
 
-- **Promtail** wciąga NDJSON z `data/ingest/*.ndjson`, wyciąga etykiety (`level`, `emitter`, `app`) i `ts`.
-- **Loki** przechowuje logi (filesystem), retencja i limity jak niżej.
-- **Prometheus** scrapuje:
-  - **Ingest Gateway**: `host.docker.internal:8080/metrics`
-  - **Auth Gateway**: `host.docker.internal:8090/metrics`
-  - **Prometheus** self, **Loki**, **Promtail**
-- **Alertmanager** renderowany z szablonu `.tmpl.yml` na podstawie ENV i wysyła alerty do Slacka.
-- **Grafana** ma dane z Prometheusa i Loki; dashboard `docs/grafana_dashboard.json`.
+- **AuthGW**: autoryzacja (HMAC/API key), rate-limit, backpressure, retry + **circuit breaker**; proxy do IngestGW.
+- **IngestGW**: parsowanie (JSON/CSV/syslog-like), **normalizacja** (ts / level / maskowanie PII / opcjonalne szyfrowanie), metryki, opcjonalny sink **NDJSON**.
+- **Core**: szybki odbiór już znormalizowanych rekordów, metryki i opcjonalny sink NDJSON (z etykietami `emitter`, `scenario_id`).
+- **Promtail**: czyta `data/ingest/*.ndjson`, etykiety: `app`, `emitter`, `level`, `ts`.
+- **Loki**: przechowuje logi.
+- **Prometheus**: scrapuje metryki (`/metrics`).
+- **Alertmanager**: Slack (szablon → render z ENV).
+- **Grafana**: dashboard `docs/grafana_dashboard.json`.
 
-> `X-Emitter` jest nadawany przez emitery lub doklejany przez **AuthGW** (po weryfikacji klucza/HMAC), dzięki czemu etykieta `emitter` jest spójna w logach i metrykach.
+> `X-Emitter` / `X-Scenario-Id` są propagowane przez **AuthGW** i **Ingest/Core** do metryk i NDJSON (patrz nagłówki/etykiety w kodzie serwisów).
 
 ---
 
 ## Uruchamianie stacka
 
 ```bash
-# Observability stack
-make up            # uruchamia Loki/Promtail/Prometheus/Grafana (compose)
-make down          # zatrzymuje
-
-# Przeładuj Prometheusa po zmianie reguł
-make prom-reload
-
-# Alertmanager (templating + start + reload + smoke)
-export ALERTMANAGER_SLACK_WEBHOOK=...
-export ALERTMANAGER_SLACK_WEBHOOK_LOGOPS=...
-make am-render     # renderuje z .tmpl do rendered/alertmanager.yml (envsubst)
-make am-up         # podnosi usługę alertmanagera (compose)
-make am-reload     # POST /-/reload
-make am-synthetic  # syntetyczny alert do Slacka (AM API)
-make am-health     # health AM + czy Prom widzi AM + lista grup reguł
-
-# Loki szybkie zapytanie
-make loki-query    # bazowe zapytanie po etykietach
+# Observability stack (Loki/Promtail/Prometheus/Grafana/Alertmanager)
+docker compose -f infra/docker/docker-compose.observability.yml up -d
+# zatrzymanie
+docker compose -f infra/docker/docker-compose.observability.yml down
 ```
+
+**Scrape z hosta (bramy poza Compose):**
+- Ingest: `host.docker.internal:8080/metrics`
+- AuthGW: `host.docker.internal:8081/metrics`
+- Core:   `host.docker.internal:8095/metrics`
+
+> Na Linuksie, jeśli `host.docker.internal` nie działa, użyj IP hosta (np. `172.17.0.1`).
+
+**Szybkie sanity checki:**
+- Grafana: <http://localhost:3000> (`admin`/`admin`)
+- Prometheus: <http://localhost:9090> → **Status → Targets**
+- Alertmanager: <http://localhost:9093>
+- Loki health: <http://localhost:3100/ready>
 
 ---
 
 ## Promtail (parsowanie NDJSON)
 
+- **Compose** montuje repozytoryjne `data/ingest` pod: `/var/log/logops:ro`
 - **Konfiguracja**: `infra/docker/promtail/promtail-config.yml`
-- **Źródło**: `./data/ingest/*.ndjson` montowane jako `/var/logops/data/ingest/*.ndjson`
-- **Pozycje/offsety**: `/var/lib/promtail/positions.yaml` (trwałe via volume)
+- **Pozycje**: (w zależności od Twojej konfiguracji) np. plik w volume /tmp/ itp.
 
-Fragment (aktualny):
+Minimalny fragment (dopasowany do aktualnego Compose):
+
 ```yaml
 server:
   http_listen_port: 9080
   grpc_listen_port: 0
 
 positions:
-  filename: /var/lib/promtail/positions.yaml
+  filename: /tmp/positions.yaml  # lub /var/lib/promtail/positions.yaml, jeśli tak ustawisz mount
 
 clients:
   - url: http://logops-loki:3100/loki/api/v1/push
@@ -76,8 +78,7 @@ scrape_configs:
         labels:
           job: logops-ndjson
           app: logops
-          __path__: /var/logops/data/ingest/*.ndjson
-
+          __path__: /var/log/logops/*.ndjson   # <— uwaga: nowa ścieżka z Compose
     pipeline_stages:
       - json:
           expressions:
@@ -97,22 +98,19 @@ scrape_configs:
           source: msg
 ```
 
-> Przykładowe `positions.yaml` (stan odczytu plików):
-```yaml
-positions:
-  /var/logops/data/ingest/20250827.ndjson: "3650"
-  /var/logops/data/ingest/20250828.ndjson: "573"
-```
+> W Compose dodaliśmy też bind-mounty do hosta:
+> `../../../logs → /var/log/logops-hosts/logs:ro` oraz
+> `../../../data/orch/scenarios → /var/log/logops-hosts/scenarios:ro`
+> Jeśli chcesz je scrapować, dodaj odrębne `scrape_configs` z właściwymi `__path__`.
 
 ---
 
 ## Loki (retencja i limity)
 
 - **Konfiguracja**: `infra/docker/loki/loki-config.yml`
-- **Retencja**: `table_manager.retention_period: 48h`
-- **Odrzuć bardzo stare próbki**: `limits_config.reject_old_samples_max_age: 168h`
+- **Retencja** (przykład): `table_manager.retention_period: 48h`
+- **Stare próbki**: `limits_config.reject_old_samples_max_age: 168h`
 
-Fragment (kluczowe pola):
 ```yaml
 limits_config:
   reject_old_samples: true
@@ -125,11 +123,12 @@ table_manager:
 
 ---
 
-## Prometheus (scrape + alerty)
+## Prometheus (scrape + reguły alertów)
 
-### Scrape targets
+### Scrape targets (przykład)
 
 `infra/docker/prometheus/prometheus.yml`:
+
 ```yaml
 global:
   scrape_interval: 15s
@@ -148,67 +147,87 @@ scrape_configs:
     static_configs:
       - targets: ['prometheus:9090']
 
-  - job_name: 'logops-gateway'   # legacy alias (zachowany dla zgodności)
-    metrics_path: /metrics
-    static_configs:
-      - targets: ['host.docker.internal:8080']
-
+  # Bramki scrapowane z hosta
   - job_name: 'logops_ingest'
     static_configs:
       - targets: ['host.docker.internal:8080']
 
   - job_name: 'logops_authgw'
     static_configs:
-      - targets: ['host.docker.internal:8090']
+      - targets: ['host.docker.internal:8081']
+
+  - job_name: 'logops_core'
+    static_configs:
+      - targets: ['host.docker.internal:8095']
+
+  # (opcjonalnie) wgląd w usługi w Compose
+  - job_name: 'loki'
+    static_configs:
+      - targets: ['loki:3100']
+
+  - job_name: 'promtail'
+    static_configs:
+      - targets: ['promtail:9080']
 ```
 
-### Reguły alertów (w tym SLO/p95)
+### Reguły alertów (SLO/p95 i zdrowie)
 
-`infra/docker/prometheus/alert_rules.yml` (wycinek całości – aktualne reguły):
+`infra/docker/prometheus/alert_rules.yml` (zaktualizowane nazwy jobów i panele jakości):
 
 ```yaml
 groups:
-  - name: logops.alerts
+  - name: logops.health
     interval: 15s
     rules:
-      - alert: LogOpsGatewayDown
-        expr: up{job="logops-gateway"} == 0
+      - alert: LogOpsIngestDown
+        expr: up{job="logops_ingest"} == 0
         for: 1m
-        labels: { severity: critical }
+        labels: { severity: critical, service: logops }
         annotations:
-          summary: "Gateway is down"
-          description: "Target up{job='logops-gateway'} == 0 przez ≥1m."
+          summary: "IngestGW is down"
+          description: "up{job='logops_ingest'} == 0 przez ≥1m."
+
+      - alert: LogOpsAuthGWDown
+        expr: up{job="logops_authgw"} == 0
+        for: 1m
+        labels: { severity: critical, service: logops }
+        annotations:
+          summary: "AuthGW is down"
+          description: "up{job='logops_authgw'} == 0 przez ≥1m."
+
+      - alert: LogOpsCoreDown
+        expr: up{job="logops_core"} == 0
+        for: 1m
+        labels: { severity: critical, service: logops }
+        annotations:
+          summary: "Core is down"
+          description: "up{job='logops_core'} == 0 przez ≥1m."
 
       - alert: LogOpsNoIngest5m
         expr: increase(logops_accepted_total[5m]) <= 0
         for: 2m
-        labels: { severity: warning }
+        labels: { severity: warning, service: logops }
         annotations:
           summary: "No logs ingested for 5 minutes"
           description: "Brak przyrostu logops_accepted_total w oknie 5m przez ≥2m."
 
-      - alert: LogOpsLowIngest
-        expr: rate(logops_accepted_total[5m]) < 0.2
-        for: 5m
-        labels: { severity: info }
+      - alert: LogOpsInflightStuckHigh
+        expr: logops_inflight > 5
+        for: 2m
+        labels: { severity: warning, service: logops }
         annotations:
-          summary: "Low ingest rate"
-          description: "Średnia szybkość ingestu < 0.2 loga/s przez ≥5m."
+          summary: "Inflight gauge high"
+          description: "logops_inflight > 5 przez ≥2m (przeciążenie/zator)."
 
-      - alert: LogOpsHighIngestBurst
-        expr: rate(logops_accepted_total[1m]) > 20
-        for: 1m
-        labels: { severity: warning }
-        annotations:
-          summary: "High ingest burst"
-          description: "Szybkość ingestu > 20 logów/s przez ≥1m (sprawdź źródła)."
-
+  - name: logops.quality
+    interval: 15s
+    rules:
       - alert: LogOpsHighMissingTS
         expr: increase(logops_accepted_total[5m]) >= 100
           and ( increase(logops_missing_ts_total[5m])
                 / clamp_min(increase(logops_accepted_total[5m]), 1) ) > 0.20
         for: 2m
-        labels: { severity: warning }
+        labels: { severity: warning, service: logops }
         annotations:
           summary: "High share of missing timestamps"
           description: "Udział braków TS > 20% przy ≥100 logach w 5m."
@@ -218,7 +237,7 @@ groups:
           and ( increase(logops_missing_ts_total[5m])
                 / clamp_min(increase(logops_accepted_total[5m]), 1) ) > 0.50
         for: 2m
-        labels: { severity: critical }
+        labels: { severity: critical, service: logops }
         annotations:
           summary: "Very high share of missing timestamps"
           description: "Udział braków TS > 50% przy ≥200 logach w 5m."
@@ -228,7 +247,7 @@ groups:
           and ( increase(logops_missing_level_total[5m])
                 / clamp_min(increase(logops_accepted_total[5m]), 1) ) > 0.20
         for: 2m
-        labels: { severity: warning }
+        labels: { severity: warning, service: logops }
         annotations:
           summary: "High share of missing levels"
           description: "Udział braków level > 20% przy ≥100 logach w 5m."
@@ -238,26 +257,18 @@ groups:
           and ( increase(logops_missing_level_total[5m])
                 / clamp_min(increase(logops_accepted_total[5m]), 1) ) > 0.50
         for: 2m
-        labels: { severity: critical }
+        labels: { severity: critical, service: logops }
         annotations:
           summary: "Very high share of missing levels"
           description: "Udział braków level > 50% przy ≥200 logach w 5m."
 
-      - alert: LogOpsInflightStuckHigh
-        expr: logops_inflight > 5
+      - alert: AuthGWRejectedSpikes
+        expr: sum(increase(logops_rejected_total[5m])) by (reason) > 0
         for: 2m
-        labels: { severity: warning }
+        labels: { severity: info, service: logops }
         annotations:
-          summary: "Inflight gauge high"
-          description: "logops_inflight > 5 przez ≥2m (przeciążenie lub zator)."
-
-      - alert: LogOpsMetricsAbsent
-        expr: absent(up{job="logops-gateway"})
-        for: 2m
-        labels: { severity: critical }
-        annotations:
-          summary: "No metrics scraped from gateway"
-          description: "Prometheus nie widzi żadnych metryk z job='logops-gateway' przez ≥2m."
+          summary: "AuthGW rejections present"
+          description: "Wzrost logops_rejected_total w 5m (powód: {{ $labels.reason }})."
 
   - name: logops.slo
     interval: 15s
@@ -273,7 +284,7 @@ groups:
         labels: { severity: warning, service: logops, team: platform }
         annotations:
           summary: "SLO: <99% batchy <500ms (30m)"
-          description: "Obecnie {{ $value | printf \"%.2f\" }} < 0.99; sprawdź przeciążenie/IO."
+          description: "Obecnie {{ $value | printf \"%.2f\" }} < 0.99; sprawdź load/IO."
 
       - alert: LogOpsP95LatencyHigh
         expr: |
@@ -285,10 +296,10 @@ groups:
         labels: { severity: critical, service: logops, team: platform }
         annotations:
           summary: "p95 batch latency > 500ms (≥5m)"
-          description: "p95={{ $value | printf \"%.3f\" }}s; zweryfikuj load, CPU, disk, backpressure."
+          description: "p95={{ $value | printf \"%.3f\" }}s; zweryfikuj obciążenie/backpressure."
 ```
 
-> **Uwaga:** rozważ dodanie bliźniaczych alertów „down/absent” także dla `job="logops_authgw"` (Health AuthGW).
+> Metryki w powyższych regułach pochodzą z **IngestGW** (`logops_*`) i **AuthGW** (`logops_rejected_total`). **Core** posiada własne metryki (`core_*`), które możesz dodać do osobnych alertów (np. `increase(core_rejected_total[5m])`).
 
 ---
 
@@ -296,10 +307,10 @@ groups:
 
 - **Szablon**: `infra/docker/alertmanager/alertmanager.tmpl.yml`
 - **Render**: `make am-render` (wymaga ENV: `ALERTMANAGER_SLACK_WEBHOOK`, `ALERTMANAGER_SLACK_WEBHOOK_LOGOPS`)
-- **Render output**: `infra/docker/alertmanager/rendered/alertmanager.yml`
-- **Uruchomienie**: `make am-up`, przeładowanie: `make am-reload`
+- **Uruchomienie**: `make am-up`, przeładowanie: `make am-reload`, zdrowie: `make am-health`
 
-Szablon (fragment):
+Fragment szablonu (skrót):
+
 ```yaml
 route:
   receiver: slack_default
@@ -334,13 +345,14 @@ receivers:
           *Desc:* {{ .CommonAnnotations.description }}
 ```
 
-> **Bezpieczeństwo:** Nie commituj bezpośrednich URL-i webhooków do repo. Trzymaj tylko `.tmpl.yml` i renderuj plik wynikowy **lokalnie** z ENV → dodaj `rendered/alertmanager.yml` do `.gitignore`.
+> **Bezpieczeństwo:** `alertmanager.yml` po renderze zawiera pełne URL-e webhooków – **nie commituj** go (dodany do `.gitignore`).
 
 ---
 
 ## Grafana (datasources + dashboard)
 
 - **Datasources**: `infra/docker/grafana/provisioning/datasources/datasources.yml`
+
 ```yaml
 apiVersion: 1
 datasources:
@@ -358,15 +370,16 @@ datasources:
     editable: false
 ```
 
-- **Dashboard**: `docs/grafana_dashboard.json`  
-  Import w UI: **Dashboards → New → Import → Upload JSON → wybierz Loki i Prometheus jako datasources**.
+- **Dashboard**: `docs/grafana_dashboard.json`
+  Import: **Dashboards → New → Import → Upload JSON** → wskaż **Prometheus** i **Loki**.
 
-Panele (m.in.):
-- **EPS** i Accepted (Prometheus).
-- **In-flight** (gauge).
-- **SLO % < 500ms** i **p95 latency (5m)** (histogram_quantile).
-- **Missing TS/Level**, **Parse errors**, **AuthGW rejected** (sum(increase(...[5m]))).
-- **Logs/Explore** (Loki) z filtrami `level` i `emitter`.
+Panele (sugestie):
+- Throughput: `sum(rate(logops_accepted_total[1m]))`
+- In-flight (`logops_inflight`)
+- **SLO % < 500ms** (udział kubełków `<=0.5s`) i **p95 (5m)** z `logops_batch_latency_seconds`
+- Jakość: `increase(logops_missing_ts_total[5m])`, `increase(logops_missing_level_total[5m])`, `increase(logops_parse_errors_total[5m])`
+- Odrzucenia AuthGW: `sum by (reason) (increase(logops_rejected_total[5m]))`
+- Explore (Loki): filtry `app`, `emitter`, `level`
 
 ---
 
@@ -374,241 +387,63 @@ Panele (m.in.):
 
 **Loki (Explore / API):**
 ```logql
-{job="logops-ndjson", app="logops", emitter="emitter_csv"}
+{job="logops-ndjson", app="logops"}
 ```
-```bash
-curl -G "http://localhost:3100/loki/api/v1/query" \
-  --data-urlencode 'query={job="logops-ndjson",app="logops",emitter="emitter_csv"}'
+```logql
+{job="logops-ndjson", app="logops", emitter="json"} |= "error"
 ```
 
-**Prometheus (p95 5m):**
+**Prometheus (p95 – okno 5m):**
 ```promql
 histogram_quantile(0.95, sum by (le) (rate(logops_batch_latency_seconds_bucket[5m])))
+```
+
+**SLO % < 500ms (30m):**
+```promql
+100 *
+( sum(rate(logops_batch_latency_seconds_bucket{le="0.5"}[30m]))
+/ sum(rate(logops_batch_latency_seconds_count[30m])) )
 ```
 
 ---
 
 ## Scenariusze ruchu (traffic generator)
 
-- **Pliki**: `scenarios/*.yaml`  
-- **Runner**: `tools/run_scenario.py`  
-- **Makefile**: `scenario-*`, `scenario-run SCEN=...`
+- **Pliki**: `scenarios/*.yaml`
+- **Runner**: `tools/run_scenario.py` (sterowanie EPS/ramp/jitter/seed; integruje się z emiterami)
+- **CLI Orchestratora**: `orch_cli.py` (start/stop/list scenariuszy przez HTTP)
+- **Makefile**: cele `scenario-*`, `scenario-run SCEN=...`
 
-Przykład:
+Przykłady:
 ```bash
 make scenario-default
 make scenario-spike
-make scenario-high-errors
-make scenario-run SCEN=scenarios/burst_high_error.yaml
+python tools/run_scenario.py -s scenarios/burst-then-ramp.yaml --log-file data/scenario_runs/ramp.jsonl
 ```
 
 Efekt:
-- Logi trafią do NDJSON → Promtail → Loki.
-- Metryki ingest i SLO/p95 pojawią się w Prometheus/Grafana.
-- **AuthGW** może odrzucać (backpressure: 413) z przyrostem `logops_rejected_total{reason=...}`.
+- NDJSON trafia do `data/ingest/*.ndjson` → Promtail → Loki.
+- Metryki ingest/SLO widoczne w Prometheus/Grafana.
+- W torze z **AuthGW** pojawią się ewentualne odrzucenia (`logops_rejected_total{reason}`).
 
 ---
 
-## Konfiguracje – pełne fragmenty (dla referencji)
+## Housekeeping (retencja NDJSON)
 
-### Promtail – `infra/docker/promtail/promtail-config.yml`
-```yaml
-server:
-  http_listen_port: 9080
-  grpc_listen_port: 0
-
-positions:
-  filename: /var/lib/promtail/positions.yaml
-
-clients:
-  - url: http://logops-loki:3100/loki/api/v1/push
-
-scrape_configs:
-  - job_name: logops-ndjson
-    static_configs:
-      - targets: [localhost]
-        labels:
-          job: logops-ndjson
-          app: logops
-          __path__: /var/logops/data/ingest/*.ndjson
-
-    pipeline_stages:
-      - json:
-          expressions:
-            ts: ts
-            level: level
-            msg: msg
-            emitter: emitter
-      - timestamp:
-          source: ts
-          format: RFC3339
-          action_on_failure: skip
-      - labels:
-          level:
-          app:
-          emitter:
-      - output:
-          source: msg
-```
-
-### Loki – `infra/docker/loki/loki-config.yml`
-```yaml
-auth_enabled: false
-server:
-  http_listen_port: 3100
-  grpc_listen_port: 9095
-
-common:
-  path_prefix: /loki
-  storage:
-    filesystem:
-      chunks_directory: /loki/chunks
-      rules_directory: /loki/rules
-  replication_factor: 1
-  ring:
-    instance_addr: 127.0.0.1
-    kvstore:
-      store: inmemory
-
-schema_config:
-  configs:
-    - from: 2022-01-01
-      store: boltdb-shipper
-      object_store: filesystem
-      schema: v11
-      index:
-        prefix: index_
-        period: 24h
-
-ruler:
-  storage:
-    type: local
-    local:
-      directory: /loki/rules
-  rule_path: /loki/rules-temp
-  enable_api: true
-
-limits_config:
-  reject_old_samples: true
-  reject_old_samples_max_age: 168h
-
-table_manager:
-  retention_deletes_enabled: true
-  retention_period: 48h
-```
-
-### Prometheus – `infra/docker/prometheus/prometheus.yml`
-```yaml
-global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
-
-alerting:
-  alertmanagers:
-    - static_configs:
-        - targets: ['alertmanager:9093']
-
-rule_files:
-  - /etc/prometheus/alert_rules.yml
-
-scrape_configs:
-  - job_name: 'prometheus'
-    static_configs:
-      - targets: ['prometheus:9090']
-
-  - job_name: 'logops-gateway'
-    metrics_path: /metrics
-    static_configs:
-      - targets: ['host.docker.internal:8080']
-
-  - job_name: 'logops_ingest'
-    static_configs:
-      - targets: ['host.docker.internal:8080']
-
-  - job_name: 'logops_authgw'
-    static_configs:
-      - targets: ['host.docker.internal:8090']
-```
-
-### Alert rules – `infra/docker/prometheus/alert_rules.yml`
-```yaml
-# (patrz sekcja „Reguły alertów” wyżej — to ten sam plik)
-# Wklejony tam w całości dla czytelności i jednego miejsca prawdy.
-```
-
-### Alertmanager – szablon `infra/docker/alertmanager/alertmanager.tmpl.yml`
-```yaml
-# (patrz sekcja „Alertmanager (templating + Slack)”)
-```
-
-### Alertmanager – render `infra/docker/alertmanager/rendered/alertmanager.yml`
-```yaml
-# Plik generowany – nie commituj sekretów!
-# Zawiera już „api_url: https://hooks.slack.com/...”
-```
-
-### Grafana – datasources
-```yaml
-# (patrz sekcja „Grafana (datasources + dashboard)”)
-```
-
-### Dashboard – `docs/grafana_dashboard.json`
-```json
-{
-  "title": "LogOps – Observability (SLO)",
-  "uid": "logops-observability-slo",
-  "...": "zob. plik w repo (panele: EPS, inflight, SLO%, p95, rejected, itp.)"
-}
-```
-
-### Scenariusze – `scenarios/*.yaml`
-```yaml
-# default.yaml, spike.yaml, high_errors.yaml, burst_high_error.yaml, quiet.yaml, burst-then-ramp.yaml
-# (patrz katalog; gotowe profile)
-```
-
-### Runner – `tools/run_scenario.py`
-```python
-# Runner scenariuszy z obsługą EPS, ramp, jitter, seed
-# (pełny kod w repo – patrz plik; zgrywa statystyki i poziomy)
-```
-
-### Makefile – cele przydatne dla observability
-```make
-up / down / ps / logs
-prom-reload
-loki-query
-am-render / am-up / am-reload / am-synthetic / am-health / slack-smoke
-scenario-* / scenario-run
-all-authgw / all-ingest
-metrics / metrics-rejected
-```
+Narzędzie: `tools/housekeeping.py` (używane także przez gatewaye w trybie **autorun**)
+Kluczowe ENV: `LOGOPS_SINK_DIR`, `LOGOPS_RETENTION_DAYS`, `LOGOPS_ARCHIVE_MODE` (`delete|zip`)
+Szczegóły: `docs/tools/housekeeping.md`
 
 ---
 
-## Higiena repo (praktyczne)
+## Higiena repo
 
-Dodaj do `.gitignore` (jeśli jeszcze nie ma):
+Przykładowe wpisy `.gitignore`:
 
 ```
-# runtime
 /data/ingest/*.ndjson
-infra/docker/promtail/positions/positions.yaml
-logs/*.out
-run/*.pid
-
-# alertmanager (sekrety po renderze)
 infra/docker/alertmanager/rendered/alertmanager.yml
-
-# lokalne generaty
-big.json
-many.json
-
-# klucze / testowe
-second
-second.pub
-
-# venv / pycache
+infra/docker/promtail/positions/positions.yaml
 .venv/
 **/__pycache__/
 *.py[cod]
@@ -618,9 +453,11 @@ second.pub
 
 ## Powiązane dokumenty
 
-- `docs/services/ingest_gateway.md` — normalizacja, sink, metryki ingest.  
-- `docs/services/auth_gateway.md` — autoryzacja (HMAC/API key), RL, backpressure, retry+CB.  
-- `docs/tools/housekeeping.md` — retention NDJSON.  
-- `docs/infra.md` — uruchamianie Compose/stack.
-
----
+- `docs/services/ingest_gateway.md` — parsowanie, normalizacja, metryki, NDJSON.
+- `docs/services/auth_gateway.md` — tryby auth (HMAC/API key/any), RL, backpressure, **retry + circuit breaker**.
+- `docs/services/core.md` — sink NDJSON, metryki per `core_*`.
+- `docs/tools/hmac_curl.md` — wrapper `curl` z podpisem HMAC.
+- `docs/tools/sign_hmac.md` — generator nagłówków HMAC.
+- `docs/tools/verify_hmac_against_signer.md` — weryfikator poprawności nagłówków vs sekret.
+- `docs/tools/housekeeping.md` — retencja/archiwizacja NDJSON.
+- `docs/infra.md` — uruchamianie Compose/stack i mounty Promtail.

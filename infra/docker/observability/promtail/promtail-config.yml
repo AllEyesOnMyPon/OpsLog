@@ -1,0 +1,109 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+positions:
+  filename: /tmp/positions.yaml
+
+scrape_configs:
+  # 1) NDJSON z ingest (data/ingest → /var/log/logops)
+  - job_name: logops-ingest-files
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: logops-ingest
+          __path__: /var/log/logops/*.ndjson
+    pipeline_stages:
+      - json:
+          expressions:
+            ts: ts
+            level: level
+            msg: msg
+            emitter: emitter
+            scenario_id: scenario_id
+            app: app
+            source: source
+      - timestamp:
+          source: ts
+          format: RFC3339
+      - labels:
+          app:
+          source:
+          emitter:
+          scenario_id:
+          level:
+      # aby działał line_format "{{.service}} {{.msg}}"
+      - template:
+          source: service
+          template: '{{ .app }}'
+
+  # 2) Logi serwisów (uvicorn) z hosta (logs/*.out)
+  - job_name: logops-host-logs
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: host-logs
+          service: ingest
+          __path__: /var/log/logops-hosts/logs/ingest.out
+      - targets: [localhost]
+        labels:
+          job: host-logs
+          service: auth
+          __path__: /var/log/logops-hosts/logs/authgw.out
+      - targets: [localhost]
+        labels:
+          job: host-logs
+          service: core
+          __path__: /var/log/logops-hosts/logs/core.out
+      - targets: [localhost]
+        labels:
+          job: host-logs
+          service: orch
+          __path__: /var/log/logops-hosts/logs/orch.out
+    pipeline_stages:
+      # wyciągnij level + zrób "msg" z całej reszty wiersza
+      - regex:
+          expression: '^(?P<level>[A-Z]+):\s+(?P<msg>.*)$'
+      - labels:
+          service:
+          level:
+      # pole "service" (na potrzeby line_format) – bierzemy z labela service
+      - template:
+          source: service
+          template: '{{ .service }}'
+
+  # 3) JSONL scenariuszy (data/orch/scenarios) – mają być filtrowalne po scenario_id
+  - job_name: logops-scenarios
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: scenarios
+          __path__: /var/log/logops-hosts/scenarios/sc-*.jsonl
+    # dodaj label scenario_id z nazwy pliku
+    relabel_configs:
+      - source_labels: ['__path__']
+        target_label: scenario_id
+        regex: '.*/(sc-[^.]+)\.jsonl'
+        replacement: '$1'
+    pipeline_stages:
+      # spróbuj sparsować JSON (jeżeli wiersze są JSON-owe)
+      - json:
+          expressions:
+            ts: ts
+            level: level
+            msg: msg
+            emitter: emitter
+            type: type
+      - labels:
+          emitter:
+          scenario_id:
+      # service = emitter (albo "orchestrator" gdy brak)
+      - template:
+          source: service
+          template: '{{ if .emitter }}{{ .emitter }}{{ else }}orchestrator{{ end }}'
+      - timestamp:
+          source: ts
+          format: RFC3339

@@ -1,61 +1,59 @@
 # Infrastruktura (Docker)
 
-Środowisko observability uruchamiasz z pliku:  
+Środowisko observability uruchamiasz z pliku:
 `infra/docker/docker-compose.observability.yml`
 
 ---
 
 ## Usługi
 
-- **Loki** — `grafana/loki:2.9.6`  
-  - Port: `3100:3100`  
-  - Konfiguracja: `infra/docker/loki/loki-config.yml`  
-  - Dane: wolumen `loki-data` montowany pod `/loki`  
-  - Sieć: `obs`  
+- **Prometheus** — `prom/prometheus:latest`
+  Port: `9090:9090`
+  Konfiguracja: `infra/docker/prometheus/prometheus.yml` (+ `alert_rules.yml`)
+  Dane: wolumen `prometheus-data` pod `/prometheus`
+  Przełącznik `--web.enable-lifecycle` pozwala na hot-reload (`/-/reload`).
+  `depends_on: [alertmanager]`
 
-- **Promtail** — `grafana/promtail:2.9.6`  
-  - Konfiguracja: `infra/docker/promtail/promtail-config.yml`  
-  - Źródło logów: bind-mount `../../data/ingest → /var/logops/data/ingest:ro`  
-  - Pozycje/offsety: bind-mount `./promtail/positions → /var/lib/promtail`  
-  - Zależności: `depends_on: [loki]`  
-  - Sieć: `obs`  
+- **Promtail** — `grafana/promtail:2.9.0`
+  Konfiguracja: `infra/docker/promtail/promtail-config.yml`
+  Mounty:
+  - `../../../data/ingest → /var/log/logops:ro`  *(NDJSON z gatewaya)*
+  - `../../../logs → /var/log/logops-hosts/logs:ro`  *(logi hosta – **NOWE**, przeniesione poza /var/log/logops)*
+  - `../../../data/orch/scenarios → /var/log/logops-hosts/scenarios:ro`  *(logi/scenariusze orkiestacji – **NOWE**)*
+  - `promtail-tmp → /tmp`  *(pozycje/stan wg konfiguracji – jeśli tak ustawiono w promtail-config.yml)*
+  `depends_on: [loki]`
 
-- **Prometheus** — `prom/prometheus:v2.54.0`  
-  - Port: `9090:9090`  
-  - Konfiguracja: `infra/docker/prometheus/prometheus.yml`  
-  - Reguły alertów: `infra/docker/prometheus/alert_rules.yml`  
-  - Dane: wolumen `prometheus-data` pod `/prometheus`  
-  - Sieć: `obs`  
+- **Alertmanager** — `prom/alertmanager:latest`
+  Port: `9093:9093`
+  Konfiguracja: `infra/docker/alertmanager/alertmanager.yml`
+  Uruchomiony z `--cluster.advertise-address=0.0.0.0:9094` i `--log.level=debug`.
 
-- **Grafana** — `grafana/grafana:10.4.0`  
-  - Port: `3000:3000`  
-  - Hasło admina: `GF_SECURITY_ADMIN_PASSWORD=admin`  
-  - Datasources provisioning: `infra/docker/grafana/provisioning/datasources → /etc/grafana/provisioning/datasources:ro`  
-  - Dane: wolumen `grafana-data` pod `/var/lib/grafana`  
-  - Zależności: `depends_on: [loki, prometheus]`  
-  - Sieć: `obs`  
+- **Loki** — `grafana/loki:2.9.0`
+  Port: `3100:3100`
+  Konfiguracja: `infra/docker/loki/loki-config.yml`
+  Dane: wolumen `loki-data` pod `/loki`.
 
-- **Alertmanager** — `prom/alertmanager:v0.27.0`  
-  - Port: `9093:9093`  
-  - Konfiguracja generowana z szablonu: `infra/docker/alertmanager/alertmanager.tmpl.yml`  
-  - Po wygenerowaniu zapisywana w: `infra/docker/alertmanager/rendered/alertmanager.yml`  
-  - Sieć: `obs`  
-  - Integracja: Slack webhooks (definiowane w `.env`)  
-  - Obsługuje reguły z Prometheusa (`alert_rules.yml`)  
+- **Grafana** — `grafana/grafana:latest`
+  Port: `3000:3000`
+  ENV: `GF_SECURITY_ADMIN_USER=admin`, `GF_SECURITY_ADMIN_PASSWORD=admin`
+  Provisioning:
+  - `infra/docker/grafana/provisioning/datasources/datasources.yml → /etc/grafana/provisioning/datasources/datasources.yml:ro`
+  - `infra/docker/grafana/provisioning/dashboards → /etc/grafana/provisioning/dashboards:ro`
+  Dane: wolumen `grafana-data` pod `/var/lib/grafana`
+  `depends_on: [prometheus, loki]`
+
+> **Uwaga o ścieżkach:** plik Compose znajduje się w `infra/docker/…`, dlatego bind-mounty są względne do **roota repo** (`../../../…`).
 
 ---
 
 ## Sieci i wolumeny
 
-- Sieć: `obs` (wspólna dla wszystkich usług)  
-- Wolumeny:  
-  - `loki-data`  
-  - `prometheus-data`  
-  - `grafana-data`  
-  - `promtail-data` — *zdefiniowany*, ale w Compose nieużywany (Promtail korzysta z bind-mountu `./promtail/positions`). Można go użyć alternatywnie:  
-    ```yaml
-    - promtail-data:/var/lib/promtail
-    ```
+- Sieć: domyślna sieć Compose (brak dedykowanej sieci w tym pliku).
+- Wolumeny:
+  - `grafana-data`
+  - `loki-data`
+  - `promtail-tmp` — tymczasowy stan/pozycje (jeśli tak skonfigurowano w promtail)
+  - `prometheus-data`
 
 ---
 
@@ -67,25 +65,55 @@ docker compose -f infra/docker/docker-compose.observability.yml up -d
 docker compose -f infra/docker/docker-compose.observability.yml down
 ```
 
-**Gateway poza Compose**:  
-W pliku `prometheus.yml` scrape odbywa się na `host.docker.internal:8080/metrics`.  
-Na Linuxie zamień to na IP hosta (np. `172.17.0.1:8080`).  
+**Gateway poza Compose**
+Prometheus może scrapować metryki bram działających na hoście:
+- Ingest: `host.docker.internal:8080/metrics`
+- AuthGW: `host.docker.internal:8081/metrics`
+- Core: `host.docker.internal:8095/metrics`
+
+Na Linuxie, jeśli `host.docker.internal` nie działa, użyj IP hosta (np. `172.17.0.1`).
 
 ---
 
 ## Pliki konfiguracyjne
 
-- Loki: `infra/docker/loki/loki-config.yml`  
-- Promtail: `infra/docker/promtail/promtail-config.yml`  
-- Prometheus: `infra/docker/prometheus/prometheus.yml`  
-- Alerty Prometheus: `infra/docker/prometheus/alert_rules.yml`  
-- Alertmanager:  
-  - szablon: `infra/docker/alertmanager/alertmanager.tmpl.yml`  
-  - wygenerowany plik: `infra/docker/alertmanager/rendered/alertmanager.yml`  
+- **Loki:** `infra/docker/loki/loki-config.yml`
+- **Promtail:** `infra/docker/promtail/promtail-config.yml`
+- **Prometheus:** `infra/docker/prometheus/prometheus.yml`
+- **Reguły alertów (Prometheus):** `infra/docker/prometheus/alert_rules.yml`
+- **Alertmanager:** `infra/docker/alertmanager/alertmanager.yml`
+
+---
+
+## Szybkie sanity-checki
+
+- Grafana: <http://localhost:3000> (admin / **admin**)
+- Prometheus: <http://localhost:9090> → „Status → Targets” (Loki, Promtail, bramy)
+- Alertmanager: <http://localhost:9093>
+- Loki API: <http://localhost:3100/ready>
+
+**Explore / Loki (po tym jak powstaną NDJSON w `data/ingest/`):**
+```logql
+{job="logops-ndjson", app="logops"}
+```
+lub zawężone:
+```logql
+{job="logops-ndjson", app="logops", emitter="emitter_json"}
+```
 
 ---
 
 ## Uwaga: housekeeping
 
-Proces housekeeping (działający w gatewayu) usuwa lub archiwizuje starsze pliki `*.ndjson` w `data/ingest/`.  
-To wpływa na dane dostępne dla Promtail → Loki. Szczegóły: [docs/tools/housekeeping.md](tools/housekeeping.md).
+Proces housekeeping (narzędzie/gateway) usuwa lub archiwizuje starsze pliki `*.ndjson` w `data/ingest/`.
+To wpływa na dane widoczne w Promtail → Loki. Szczegóły: [docs/tools/housekeeping.md](tools/housekeeping.md).
+
+---
+
+## Najczęstsze problemy
+
+- **Brak logów w Loki:** sprawdź, czy powstają pliki w `data/ingest/*.ndjson` oraz czy ścieżki w `promtail-config.yml` wskazują na:
+  - `/var/log/logops` (NDJSON z gatewaya)
+  - `/var/log/logops-hosts/logs` i `/var/log/logops-hosts/scenarios` (nowe mounty)
+- **Prometheus nie widzi bram:** zweryfikuj adresy `host.docker.internal`/IP hosta w `prometheus.yml`.
+- **Alerty nie przychodzą:** uzupełnij Slack webhooks w `.env` i sprawdź konfigurację `alertmanager.yml`.

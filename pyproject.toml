@@ -1,0 +1,17 @@
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+# Ruff: przeniesione ustawienia lintera do sekcji `lint`
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+fix = true
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]  # długość linii formatuje Black
+
+[tool.ruff.lint.isort]
+known-first-party = ["services", "emitters", "tools"]
+combine-as-imports = true

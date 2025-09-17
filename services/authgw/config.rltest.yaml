@@ -15,11 +15,12 @@ ratelimit:
 
 secrets:
   clients:
-    demo-pub-1:
-      secret: "demo-priv-1"
-      emitter: "emitter_json"
+    demo-pub-1: { secret: "demo-priv-1", emitter: "json" }
+    demo-pub-2: { secret: "demo-priv-2", emitter: "minimal" }
+    demo-pub-3: { secret: "demo-priv-3", emitter: "csv" }
+    demo-pub-4: { secret: "demo-priv-4", emitter: "noise" }
+    demo-pub-5: { secret: "demo-priv-5", emitter: "syslog" }
 
 backpressure:
   enabled: true
   max_body_bytes: 200000
-  max_items: 1000

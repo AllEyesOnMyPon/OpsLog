@@ -1,0 +1,33 @@
+repos:
+  # Formatowanie (Black)
+  - repo: https://github.com/psf/black
+    rev: 25.1.0
+    hooks:
+      - id: black
+        args: [--line-length=100]
+
+  # Lint (Ruff)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.12.12
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+
+  # Podstawowe sanity
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-json
+      - id: check-yaml
+
+  # git-secrets jako lokalny hook (wymaga zainstalowanego git-secrets)
+  - repo: local
+    hooks:
+      - id: git-secrets
+        name: git-secrets
+        entry: bash -lc 'git secrets --pre_commit_hook -- "$@"'
+        language: system
+        pass_filenames: true
+        types: [text]

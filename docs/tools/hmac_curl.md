@@ -1,156 +1,159 @@
-# `tools/hmac_curl.sh` — wygodny wrapper `curl` dla AuthGW (HMAC)
+# `tools/hmac_curl.sh` — wrapper `curl` z podpisem HMAC dla AuthGW
 
 Skrypt Bash, który:
-- oblicza **HMAC** (korzystając z `tools/sign_hmac.py`),
+- liczy **HMAC** (korzystając z `tools/sign_hmac.py`),
 - dokłada wymagane nagłówki (`X-Api-Key`, `X-Timestamp`, `X-Content-SHA256`, `X-Signature`, opcjonalnie `X-Nonce`),
 - wysyła żądanie `curl` do **Auth Gateway** (`/ingest` domyślnie),
-- pozwala na pełną kontrolę: metoda, URL, body (inline/plik), debug, nagłówki.
+- daje pełną kontrolę: metoda, URL, body (inline/plik), własne nagłówki, verbose, debug.
 
-> Wykorzystuje **tę samą kanonikalizację**, co serwerowy `HmacAuthMiddleware`.
+> Używa **tej samej kanonikalizacji** co serwer (`HmacAuthMiddleware`). Dzięki temu to, co podpisujesz, przejdzie walidację po stronie AuthGW.
 
-- Plik: `tools/hmac_curl.sh`
-- Wymagania: `bash`, `python` (do uruchomienia `tools/sign_hmac.py`)
-- Domyślne poświadczenia: `LOGOPS_API_KEY=demo-pub-1`, `LOGOPS_SECRET=demo-priv-1`
+**Plik:** `tools/hmac_curl.sh`
+**Wymagania:** `bash`, `python3` (do uruchomienia `tools/sign_hmac.py`)
+**Domyślne poświadczenia (ENV):** `LOGOPS_API_KEY=demo-pub-1`, `LOGOPS_SECRET=demo-priv-1`
+**Domyślny URL:** `$ENTRYPOINT_URL` lub `http://127.0.0.1:8081/ingest`
 
 ---
 
 ## Szybki start
 
-**Inline body (JSON) + nonce:**
+**Inline JSON + nonce (zalecane):**
 ```bash
 tools/hmac_curl.sh --nonce -d '{"msg":"hello"}'
 ```
 
-**Body z pliku:**
+**Body z pliku (np. CSV):**
 ```bash
-echo '{"msg":"file"}' > body.json
-tools/hmac_curl.sh --nonce -f body.json
+echo 'ts,level,msg' > body.csv
+echo '2025-01-01T00:00:00Z,INFO,"hi!"' >> body.csv
+tools/hmac_curl.sh --nonce -f body.csv -H 'Content-Type: text/csv'
 ```
 
-**GET z query (bez body):**
+**GET bez body (np. endpoint debugowy):**
 ```bash
-tools/hmac_curl.sh -X GET -u 'http://127.0.0.1:8090/ingest?dry=1' --nonce
+tools/hmac_curl.sh -X GET -u 'http://127.0.0.1:8081/_debug/hdrs' --nonce
 ```
 
-**Zmienna URL/metoda/klucze (ENV):**
+**Tylko wypisz nagłówki (`-H "K: V" -H "K: V" ...`) i wyjdź:**
 ```bash
-LOGOPS_API_KEY=demo-pub-1 LOGOPS_SECRET=demo-priv-1 \
-tools/hmac_curl.sh -X POST -u 'http://127.0.0.1:8090/ingest' --nonce -d '{"msg":"x"}'
+tools/hmac_curl.sh --nonce -d '[]' --echo-headers
 ```
 
 ---
 
-## Parametry
+## Składnia i opcje
 
 ```
-tools/hmac_curl.sh [opcje] [-- <dalsze-argumenty-dla-curl>]
+tools/hmac_curl.sh [opcje] [-- ...dodatkowe-argumenty-dla-curl]
 
--u, --url URL            Docelowy URL (dom: http://127.0.0.1:8090/ingest)
--X, --method METHOD      Metoda HTTP (dom: POST)
+-u, --url URL            Docelowy URL (dom: $ENTRYPOINT_URL lub http://127.0.0.1:8081/ingest)
+-X, --method M           Metoda HTTP (dom: POST)
 -k, --key KEY            X-Api-Key (dom: $LOGOPS_API_KEY lub demo-pub-1)
--s, --secret SECRET      sekret HMAC (dom: $LOGOPS_SECRET lub demo-priv-1)
--d, --data JSON          Treść body (JSON, inline). Wyklucza -f.
--f, --file PATH          Treść body z pliku (–data-binary @PATH). Wyklucza -d.
-    --nonce              Dodaj nagłówek X-Nonce (zalecane/gdy require_nonce: true)
-    --ts ISO8601Z        Wymuś timestamp (np. 2025-08-27T04:10:00Z)
-    --ts-offset SEC      Przesuń timestamp względem teraz (np. -3600)
-    --echo-headers       Tylko wypisz nagłówki HMAC, po **jednym** na linię, i wyjdź
---                        Oddzielacz — wszystko po nim trafia **bez zmian** do curl
+-s, --secret S           Sekret HMAC (dom: $LOGOPS_SECRET lub demo-priv-1)
+-d, --data STR           Body inline (string)
+-f, --file PATH          Body z pliku (wysyłane jako --data-binary @PATH)
+-H "Header: V"           Dodatkowy nagłówek (opcja powtarzalna)
+    --nonce              Dodaj X-Nonce (domyślnie WŁĄCZONE)
+    --no-nonce           Nie dodawaj X-Nonce
+    --ts ISO             Wymuś timestamp (ISO Z)
+    --ts-offset SPEC     Przesuń timestamp (np. +30s, -2m, +1h)
+    --echo-headers       Zwróć tylko nagłówki jako: -H "K: V" -H "K: V"... i zakończ
+-v, --verbose            Włącz verbose curl
+-h, --help               Pomoc
+--                       Oddzielacz — wszystko po nim trafia **bez zmian** do curl
 ```
 
-**Przykład `-- echo-headers`:**
-```bash
-tools/hmac_curl.sh --nonce -d '{"msg":"x"}' --echo-headers
-# => -H "X-Api-Key: ..." 
-#    -H "X-Timestamp: ..." 
-#    -H "X-Content-SHA256: ..." 
-#    -H "X-Signature: ..." 
-#    -H "X-Nonce: ..."
-```
-
-**Forwardowanie dodatkowych opcji do `curl`:**
-```bash
-tools/hmac_curl.sh --nonce -d '{"msg":"x"}' -- -i -v -D -
-```
+**Zachowanie domyślne `Content-Type`:**
+- Skrypt **doda** `Content-Type: application/json` **tylko** jeśli:
+  1) metoda ≠ `GET`, **i**
+  2) podano body (`-d` lub `-f`), **i**
+  3) **nie** przesłoniłeś `Content-Type` własnym `-H`.
+- Dla CSV/tekst ustaw `-H 'Content-Type: text/csv'` lub `-H 'Content-Type: text/plain'`.
 
 ---
 
 ## Zmienne środowiskowe
 
-| Zmienna           | Domyślnie           | Opis |
+| Zmienna           | Domyślnie                              | Opis |
 |---|---|---|
-| `LOGOPS_API_KEY`  | `demo-pub-1`        | Publiczny klucz klienta |
-| `LOGOPS_SECRET`   | `demo-priv-1`       | Sekret HMAC klienta |
-| `LOGOPS_URL`      | *(nieużywana tutaj)*| Użyj `-u/--url` zamiast ENV (czytelniej) |
+| `ENTRYPOINT_URL`  | `http://127.0.0.1:8081/ingest`         | URL docelowy, jeśli nie podasz `-u/--url` |
+| `LOGOPS_API_KEY`  | `demo-pub-1`                           | Publiczny klucz klienta (`X-Api-Key`) |
+| `LOGOPS_SECRET`   | `demo-priv-1`                          | Sekret HMAC (do podpisu) |
 
-> Sekrety trzymaj poza Gitem (np. w `.env`, menedżerze sekretów lub eksporcie sesyjnym).
+> Sekrety trzymaj poza Gitem (np. `.env.local`, menedżer sekretów, eksport sesyjny).
 
 ---
 
 ## Jak to działa (pod maską)
 
-1. Źródło body:
-   - `--file PATH` → używa `PATH`,
-   - `--data JSON` → tworzy tymczasowy plik z JSON,
-   - brak obu → body `{}`.
-2. Wywołuje `python tools/sign_hmac.py ... --body-file <PLIK> --one-per-line`  
-   aby policzyć *ten sam* `sha256(body)` i sygnaturę.
-3. Przekształca linie `-H "K: V"` na tablicę `curl` i odpala:
+1. Skrypt buduje parametry dla `tools/sign_hmac.py` (metoda, URL, body, opcjonalnie `--nonce`, `--ts`, `--ts-offset`).
+2. Uruchamia signer w Pythonie, który wypluwa **nagłówki HMAC** w formacie `"K: V"` (jeden na linię) z **tą samą kanonikalizacją**, co serwerowy middleware.
+3. Konwertuje je na argumenty `curl` (`-H "K: V"`), dołącza Twoje nagłówki i wysyła:
+   ```bash
+   curl -sS -X "$METHOD" "$URL" \
+     -H "X-Api-Key: ..." -H "X-Timestamp: ..." -H "X-Content-SHA256: ..." -H "X-Signature: ..." [-H "X-Nonce: ..."] \
+     [Twoje -H ...] [--data-binary @PLIK | --data '...']
    ```
-   curl -s -X "$METHOD" "$URL" -H 'Content-Type: application/json' \
-     <nagłówki HMAC> --data-binary "@<PLIK>"
-   ```
+4. `--echo-headers` pozwala użyć skryptu jedynie do **wygenerowania nagłówków**, które wkleisz do własnego `curl`/narzędzia.
 
 ---
 
-## Przykłady scenariuszy
+## Przykłady praktyczne
 
-**Duże body (nagłówek 413 z backpressure):**
+**1) JSON batch:**
 ```bash
-python - <<'PY'
-import json
-open("big.json","w").write(json.dumps({"msg":"x"*250000}))
-PY
-tools/hmac_curl.sh --nonce -f big.json -- --dump-header - -s -o /dev/null | sed -n '1,30p'
+tools/hmac_curl.sh --nonce -d '[{"msg":"hi","level":"info"}]'
 ```
 
-**Zbyt wiele elementów (lista > `max_items`):**
+**2) CSV:**
 ```bash
-python - <<'PY'
-import json
-open("many.json","w").write(json.dumps([{"msg":"x"}]*1200))
-PY
-tools/hmac_curl.sh --nonce -f many.json -- --dump-header - -s -o /dev/null | sed -n '1,30p'
+tools/hmac_curl.sh --nonce -f /tmp/events.csv -H 'Content-Type: text/csv'
 ```
 
-**Negatywny test — stary timestamp (spodziewane 401 skew):**
+**3) Syslog-like (text/plain):**
 ```bash
-tools/hmac_curl.sh --nonce -d '{"msg":"old"}' --ts-offset -3600 -- -i -s -o /dev/null -w "code:%{http_code}\n" -D -
+printf '2025-01-01 12:00:00 INFO host app[123]: hello\n' > /tmp/line.txt
+tools/hmac_curl.sh --nonce -f /tmp/line.txt -H 'Content-Type: text/plain'
+```
+
+**4) Własne timeouty/flag w `curl`:**
+```bash
+tools/hmac_curl.sh --nonce -d '[]' -- --max-time 5 --http1.1 -i
+```
+
+**5) Tylko nagłówki HMAC (do debugowania):**
+```bash
+tools/hmac_curl.sh --nonce -d '[]' --echo-headers
+# => -H "X-Api-Key: ..." -H "X-Timestamp: ..." -H "X-Content-SHA256: ..." -H "X-Signature: ..." -H "X-Nonce: ..."
+```
+
+**6) Test odchyłki czasu (spodziewane 401 skew):**
+```bash
+tools/hmac_curl.sh --nonce --ts-offset -3600 -d '{"msg":"old"}' -- -i -s -o /dev/null -w "code:%{http_code}\n" -D -
 ```
 
 ---
 
-## Najczęstsze problemy
+## Najczęstsze problemy i wskazówki
 
-- **401 body hash mismatch** — pamiętaj, że podpis liczony jest po **dokładnych bajtach**. Dlatego wrapper zawsze używa `--data-binary @PLIK`. Nie mieszaj z `-d` (urlencode) po stronie `curl`.
-- **401 bad signature** — niespójny `METHOD`/`URL`/`body`/`X-Timestamp` vs. to, co podpisano. Upewnij się, że parametry `-X`, `-u`, body i timestamp są te same przy generowaniu nagłówków i wysyłce.
-- **401 timestamp skew** — serwer (HMAC MW) sprawdza `clock_skew_sec`. Używaj domyślnego czasu lub `--ts/--ts-offset`.
-- **401 replay detected** — ponowne użycie `X-Nonce` przy włączonym Redis/anty-replay. Przełącz `--nonce` (generowany losowo) lub wyłącz `require_nonce` w konfigu.
-- **Brak `python`** — skrypt wymaga Pythona do uruchomienia `sign_hmac.py`.
+- **401 body hash mismatch** — podpis liczony jest po **dokładnych bajtach**. Używaj `--data-binary @PLIK` (skrypt zrobi to automatycznie dla `-f`). Przy `-d` skrypt sam przekaże tekst bez modyfikacji.
+- **401 bad signature** — niespójne `METHOD`/`URL`/`body`/`X-Timestamp` między podpisem a wysyłką. Nie zmieniaj nic „po drodze”.
+- **401 timestamp skew** — zegary się rozjechały; użyj `--ts` albo `--ts-offset`, lub zsynchronizuj czas.
+- **401 replay detected** — ponownie użyty `X-Nonce` przy włączonym anty-replay (Redis). Pozostaw `--nonce` (generuje nowy), lub wyłącz w serwerze `require_nonce=false`.
+- **Content-Type** — pamiętaj ustawić `text/csv` / `text/plain` dla CSV/syslog; domyślny `application/json` jest dodawany tylko przy body i braku Twojego `-H`.
 
 ---
 
 ## Integracja z Makefile
 
-W repo znajdziesz gotowe cele (np. `headers`, `bp-big`, `bp-many`, `smoke-authgw`), które używają tego skryptu.  
-To najlepszy punkt startu do **szybkich testów E2E**.
+W repo znajdują się cele korzystające z tego skryptu (np. szybkie testy AuthGW/backpressure).
+Możesz też osadzić `--echo-headers` w swoich celach, by generować nagłówki offline.
 
 ---
 
 ## Zobacz też
 
-- `tools/sign_hmac.py` — silnik podpisywania (kanonikalizacja)
-- `services/authgw/hmac_mw.py` — serwerowa walidacja HMAC
-- `docs/services/auth_gateway.md` — pełna dokumentacja AuthGW (HMAC, nonce, backpressure, RL)
-
-```
+- `tools/sign_hmac.py` — silnik podpisywania (kanonikalizacja zgodna z serwerem)
+- `services/authgw/hmac_mw.py` — walidacja HMAC po stronie serwera
+- `services/authgw/app.py` & `downstream.py` — forwarding z retry i circuit breakerem
+- `tools/verify_hmac_against_signer.py` — weryfikacja nagłówków/podpisu z przygotowanego żądania
