@@ -1,59 +1,59 @@
-services:
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: logops-prometheus
-    command:
-      - --config.file=/etc/prometheus/prometheus.yml
-      - --web.enable-lifecycle
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
-      - prometheus-data:/prometheus
-    restart: unless-stopped
-    depends_on:
-      - alertmanager
+services: # Observability stack for LogOps
+  prometheus: # Prometheus for metrics collection
+    image: prom/prometheus:latest # Use the latest Prometheus image
+    container_name: logops-prometheus # Name the container
+    command: # Command to run Prometheus with specific config and lifecycle options
+      - --config.file=/etc/prometheus/prometheus.yml # Path to the Prometheus config file
+      - --web.enable-lifecycle # Enable lifecycle management via HTTP
+    ports: # Expose Prometheus on port 9090
+      - "9090:9090" # Host:Container
+    volumes: # Mount configuration and data volumes
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro # Prometheus config
+      - ./prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro # Alert rules
+      - prometheus-data:/prometheus # Data storage volume
+    restart: unless-stopped # Restart policy
+    depends_on: # Dependencies for service startup
+      - alertmanager # Wait for Alertmanager to start
 
-  promtail:
-    image: grafana/promtail:2.9.0
-    container_name: logops-promtail
-    command: ["-config.file=/etc/promtail/promtail-config.yml"]
-    volumes:
-      - ./promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
-      - promtail-tmp:/tmp
+  promtail: # Promtail for log collection
+    image: grafana/promtail:2.9.0 # Use specific Promtail version
+    container_name: logops-promtail # Name the container
+    command: ["-config.file=/etc/promtail/promtail-config.yml"] # Command to run Promtail with config file
+    volumes: # Mount configuration and log file volumes
+      - ./promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro # Promtail config
+      - promtail-tmp:/tmp # Temporary storage for positions
       # względem repo root:
-      - ../../../data/ingest:/var/log/logops:ro
+      - ../../../data/ingest:/var/log/logops:ro # Log files from ingest service
       # NOWE: przenieśliśmy mounty poza /var/log/logops (bo to RO)
-      - ../../../logs:/var/log/logops-hosts/logs:ro
-      - ../../../data/orch/scenarios:/var/log/logops-hosts/scenarios:ro
-    restart: unless-stopped
-    depends_on:
-      - loki
+      - ../../../logs:/var/log/logops-hosts/logs:ro # Host logs
+      - ../../../data/orch/scenarios:/var/log/logops-hosts/scenarios:ro # Scenario logs
+    restart: unless-stopped # Restart policy
+    depends_on: # Dependencies for service startup
+      - loki  # Wait for Loki to start
 
-  alertmanager:
-    image: prom/alertmanager:latest
-    container_name: logops-alertmanager
-    command:
-      - --config.file=/etc/alertmanager/alertmanager.yml
-      - --cluster.advertise-address=0.0.0.0:9094
-      - --log.level=debug
-    ports:
-      - "9093:9093"
-    volumes:
-      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
-    restart: unless-stopped
+  alertmanager: # Alertmanager for handling alerts
+    image: prom/alertmanager:latest # Use the latest Alertmanager image
+    container_name: logops-alertmanager # Name the container
+    command: # Command to run Alertmanager with specific config and options
+      - --config.file=/etc/alertmanager/alertmanager.yml # Path to the Alertmanager config file
+      - --cluster.advertise-address=0.0.0.0:9094 # Advertise address for clustering
+      - --log.level=debug # Set log level to debug
+    ports: # Expose Alertmanager on port 9093
+      - "9093:9093" # Host:Container
+    volumes: # Mount configuration volume
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro # Alertmanager config
+    restart: unless-stopped # Restart policy
 
-  loki:
-    image: grafana/loki:2.9.0
-    container_name: logops-loki
-    command: ["-config.file=/etc/loki/loki-config.yml"]
-    ports:
-      - "3100:3100"
-    volumes:
-      - ./loki/loki-config.yml:/etc/loki/loki-config.yml:ro
-      - loki-data:/loki
-    restart: unless-stopped
+  loki: # Loki for log aggregation
+    image: grafana/loki:2.9.0 # Use specific Loki version
+    container_name: logops-loki # Name the container
+    command: ["-config.file=/etc/loki/loki-config.yml"] # Path to the Loki config file
+    ports: # Expose Loki on port 3100
+      - "3100:3100" # Host:Container
+    volumes: # Mount configuration and data volumes
+      - ./loki/loki-config.yml:/etc/loki/loki-config.yml:ro # Loki config file
+      - loki-data:/loki # Data storage volume
+    restart: unless-stopped # Restart policy
 
   grafana:
     image: grafana/grafana:latest
@@ -79,3 +79,5 @@ volumes:
   loki-data:
   promtail-tmp:
   prometheus-data:
+
+# wywolanie: docker-compose -f infra/docker/observability/docker-compose.yml up -d

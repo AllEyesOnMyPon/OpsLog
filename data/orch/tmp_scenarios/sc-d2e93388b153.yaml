@@ -1,0 +1,22 @@
+name: chaos
+duration_sec: 7200.0
+tick_sec: 1.0
+emitters:
+- name: noise
+  eps: 80.0
+  duration_sec: 7200.0
+  args:
+    chaos: 0.7
+    seed: 9001
+- name: json
+  eps: 30.0
+  duration_sec: 7200.0
+  args:
+    partial_ratio: 0.5
+    seed: 9002
+- name: syslog
+  eps: 30.0
+  duration_sec: 7200.0
+  args:
+    partial_ratio: 0.4
+    seed: 9003

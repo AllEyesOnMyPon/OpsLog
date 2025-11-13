@@ -348,12 +348,27 @@ chaos-on: ## Start "chaos mode"
 > payload = {
 >   "inline": {
 >     "name": "chaos",
->     "duration_sec": float(os.getenv("DURATION", "7200")),
+>     "duration_sec": float(os.getenv("DURATION", "7200")),   # steruje scenariuszem
 >     "tick_sec": 1.0,
 >     "emitters": [
->       {"name":"noise",  "eps": float(os.getenv("CHAOS_EPS", "80")),  "args":{"chaos": float(os.getenv("CHAOS_LVL", "0.7")), "seed": 9001}},
->       {"name":"json",   "eps": float(os.getenv("JSON_EPS",  "30")),  "args":{"partial_ratio": float(os.getenv("JSON_PARTIAL", "0.5")), "seed": 9002}},
->       {"name":"syslog", "eps": float(os.getenv("SYSLOG_EPS","30")),  "args":{"partial_ratio": float(os.getenv("SYSLOG_PARTIAL","0.4")), "seed": 9003}},
+>       {
+>         "name": "noise",
+>         "eps": float(os.getenv("CHAOS_EPS", "80")),
+>         "duration_sec": float(os.getenv("DURATION", "7200")),   # ← per-emitter
+>         "args": {"chaos": float(os.getenv("CHAOS_LVL", "0.7")), "seed": 9001}
+>       },
+>       {
+>         "name": "json",
+>         "eps": float(os.getenv("JSON_EPS", "30")),
+>         "duration_sec": float(os.getenv("DURATION", "7200")),   # ← per-emitter
+>         "args": {"partial_ratio": float(os.getenv("JSON_PARTIAL", "0.5")), "seed": 9002}
+>       },
+>       {
+>         "name": "syslog",
+>         "eps": float(os.getenv("SYSLOG_EPS", "30")),
+>         "duration_sec": float(os.getenv("DURATION", "7200")),   # ← per-emitter
+>         "args": {"partial_ratio": float(os.getenv("SYSLOG_PARTIAL", "0.4")), "seed": 9003}
+>       },
 >     ]
 >   },
 >   "debug": False
